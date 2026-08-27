@@ -139,6 +139,7 @@
     align-items: center;
     gap: 0.3rem;
   }
+  .lang-toggle a,
   .lang-toggle button {
     background: none;
     border: none;
@@ -148,6 +149,7 @@
     cursor: pointer;
     padding: 0.15rem 0.2rem;
   }
+  .lang-toggle a[aria-current="true"],
   .lang-toggle button[aria-current="true"] { color: var(--navy-deep); text-decoration: underline; text-underline-offset: 3px; }
 
   .nav-right { display: flex; align-items: center; gap: clamp(0.8rem, 2vw, 1.4rem); }
@@ -767,9 +769,9 @@
 </nav>
 <div class="nav-right">
 <div aria-label="Selector de idioma" class="lang-toggle nav-mobile-hide" role="group">
-<button aria-current="true" type="button">ES</button>
+<a href="#" aria-current="true">ES</a>
 <span aria-hidden="true">|</span>
-<button type="button">EN</button>
+<a href="en/support.html">EN</a>
 </div>
 <a class="btn-ticket" href="#">Crear ticket</a>
 <a class="btn btn-primary" href="contacto.html" style="padding:0.6rem 1.3rem; font-size:0.85rem;">Contáctanos</a>
