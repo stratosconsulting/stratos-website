@@ -6,6 +6,8 @@
 <title>Contact STRATOS Consulting Group</title>
 <meta name="description" content="Talk to STRATOS about cybersecurity, cloud, networking, managed support, or technology consulting.">
 <link rel="canonical" href="https://www.stratosconsultingpr.com/en/contact.html">
+<link rel="icon" type="image/png" sizes="512x512" href="../assets/favicon-512.png">
+<link rel="apple-touch-icon" href="../assets/favicon-512.png">
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Saira:ital,wght@0,100..900;1,100..900&display=swap');
 
@@ -37,14 +39,35 @@
     color: var(--ink);
     font-family: 'Saira', 'Arial Narrow', system-ui, sans-serif;
     font-optical-sizing: auto;
-    font-size: 16px;
-    line-height: 1.65;
+    font-size: 18px;
+    line-height: 1.6;
     -webkit-font-smoothing: antialiased;
   }
 
   ::selection { background: var(--sky); color: var(--navy-deep); }
   a { color: inherit; }
   img { max-width: 100%; display: block; }
+
+  /* Background "A" mark watermark — fixed behind all content, drifts
+     gently with scroll via JS (see watermark script). Purely decorative:
+     aria-hidden, no interaction, disabled under reduced-motion. */
+  .a-watermark {
+    position: fixed;
+    top: -8vh;
+    right: -6vw;
+    width: min(48vw, 620px);
+    height: auto;
+    opacity: 0.05;
+    z-index: 0;
+    pointer-events: none;
+    user-select: none;
+    will-change: transform;
+  }
+  header.nav, .announce, main, footer { position: relative; z-index: 1; }
+
+  @media (max-width: 720px) {
+    .a-watermark { width: min(70vw, 420px); top: -4vh; right: -18vw; opacity: 0.045; }
+  }
 
   h1, h2, h3 {
     font-family: 'Saira', sans-serif;
@@ -116,7 +139,7 @@
     margin: 0 auto;
   }
 
-  .brand-logo { height: 32px; width: auto; }
+  .brand-logo { height: 46px; width: auto; }
 
   nav.links {
     display: flex;
@@ -584,7 +607,7 @@
   @media (max-width: 780px) { .footer-grid { grid-template-columns: 1fr 1fr; } }
   @media (max-width: 480px) { .footer-grid { grid-template-columns: 1fr; } }
 
-  .footer-brand .brand-logo { height: 30px; margin-bottom: 1rem; }
+  .footer-brand .brand-logo { height: 38px; margin-bottom: 1rem; }
   .footer-brand p { color: var(--muted); font-size: 0.88rem; max-width: 30ch; }
   .footer-brand p.tag { color: var(--navy-deep); font-weight: 600; margin-top: 0.5rem; }
 
@@ -752,6 +775,7 @@
 </style>
 </head>
 <body>
+<img class="a-watermark" src="../assets/watermark-mark.png" alt="" aria-hidden="true">
 <div class="announce">
   Free cybersecurity assessment for your business. <a href="tel:+17879652895">Call us 📞 (787) 965-2895</a>
 </div>
@@ -867,6 +891,25 @@
 <span><a href="#">Privacy Policy</a> · <a href="#">Terms of Use</a> · <a href="#">Accessibility</a></span>
 </div>
 </footer>
+
+<script>
+  (function () {
+    var mark = document.querySelector('.a-watermark');
+    if (!mark) return;
+    var prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (prefersReduced) return;
+    var ticking = false;
+    function update() {
+      var y = window.scrollY || window.pageYOffset || 0;
+      mark.style.transform = 'translateY(' + (y * 0.12) + 'px)';
+      ticking = false;
+    }
+    window.addEventListener('scroll', function () {
+      if (!ticking) { requestAnimationFrame(update); ticking = true; }
+    }, { passive: true });
+    update();
+  })();
+</script>
 
 <script>
   (function () {
