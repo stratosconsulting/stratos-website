@@ -224,7 +224,10 @@ module.exports = async function (context, req) {
       throw new Error("No metric succeeded for any tenant — check app permissions/consent");
     }
 
-    const payload = { updated_at: new Date().toISOString(), metrics };
+    // tenants_read is a plain count, never per-tenant detail — safe to
+    // expose, and the quickest way to confirm client aggregation is
+    // actually happening without needing working Application Insights.
+    const payload = { updated_at: new Date().toISOString(), metrics, tenants_read: tenantsRead };
     cache = { data: payload, expiresAt: now + ttlMs };
     context.log(`security-stats: aggregated ${tenantsRead} tenant(s)`);
 
