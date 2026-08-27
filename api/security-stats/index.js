@@ -21,17 +21,19 @@ const GRAPH = "https://graph.microsoft.com/v1.0";
 const SCOPE = "https://graph.microsoft.com/.default";
 
 let cache = { data: null, expiresAt: 0 };
-let credential = null;
 
+// A fresh credential per call means a fresh token per call — no risk of
+// MSAL's internal cache handing back a token that was issued before a
+// permission change propagated (that token simply won't carry the new
+// scopes, no matter how long we wait, since scopes are baked in at
+// issuance). We already rate-limit ourselves via `cache` above, so the
+// extra token request per cache-miss is cheap.
 function getCredential() {
-  if (!credential) {
-    credential = new ClientSecretCredential(
-      process.env.GRAPH_TENANT_ID,
-      process.env.GRAPH_CLIENT_ID,
-      process.env.GRAPH_CLIENT_SECRET
-    );
-  }
-  return credential;
+  return new ClientSecretCredential(
+    process.env.GRAPH_TENANT_ID,
+    process.env.GRAPH_CLIENT_ID,
+    process.env.GRAPH_CLIENT_SECRET
+  );
 }
 
 async function getToken(context) {
