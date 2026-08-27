@@ -8,6 +8,7 @@
     "start": "func start"
   },
   "dependencies": {
-    "@azure/identity": "^4.4.1"
+    "@azure/identity": "^4.4.1",
+    "@azure/data-tables": "^13.2.2"
   }
 }
