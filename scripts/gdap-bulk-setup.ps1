@@ -70,18 +70,29 @@ $ctx = Get-MgContext
 Write-Host "Conectado como $($ctx.Account) en el tenant $($ctx.TenantId)" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
-# 2. Crear (o reutilizar) el grupo de seguridad "assignable to role"
+# 2. Crear (o reutilizar) el grupo de seguridad
+#    NOTA: NO se crea como "role-assignable" (isAssignableToRole) — ese modo
+#    es solo para grupos a los que se les asignan roles de Entra DENTRO del
+#    propio tenant de STRATOS, y exige ser Privileged Role Administrator /
+#    Global Administrator con licencia P1-P2. GDAP no lo necesita: los roles
+#    que este grupo recibe aplican del lado del CLIENTE, vía accessAssignment,
+#    no como una asignación de rol directa en el tenant de STRATOS. Un grupo
+#    de seguridad normal es suficiente y solo requiere Group.ReadWrite.All.
 # ---------------------------------------------------------------------------
 Write-Host "`n[2/5] Buscando/creando el grupo de seguridad '$GroupDisplayName'..." -ForegroundColor Yellow
 
 $group = Get-MgGroup -Filter "displayName eq '$GroupDisplayName'" -ErrorAction SilentlyContinue
 if (-not $group) {
-    $group = New-MgGroup -DisplayName $GroupDisplayName `
-        -MailEnabled:$false `
-        -MailNickname "stratos-panel-gdap" `
-        -SecurityEnabled:$true `
-        -IsAssignableToRole:$true `
-        -Description "Grupo usado por la Azure Function del panel de seguridad para leer datos de clientes vía GDAP. No agregar personas aquí manualmente."
+    try {
+        $group = New-MgGroup -DisplayName $GroupDisplayName `
+            -MailEnabled:$false `
+            -MailNickname "stratos-panel-gdap" `
+            -SecurityEnabled:$true `
+            -Description "Grupo usado por la Azure Function del panel de seguridad para leer datos de clientes vía GDAP. No agregar personas aquí manualmente." `
+            -ErrorAction Stop
+    } catch {
+        throw "No se pudo crear el grupo de seguridad. Verifica que tu cuenta tenga el rol 'Groups Administrator' o 'Global Administrator' en STRATOS. Error original: $($_.Exception.Message)"
+    }
     Write-Host "Grupo creado: $($group.Id)" -ForegroundColor Green
 } else {
     Write-Host "Grupo ya existía: $($group.Id)" -ForegroundColor Green
