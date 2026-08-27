@@ -78,7 +78,7 @@ function round1(n) {
   return Math.round(n * 10) / 10;
 }
 
-async function computeMetrics(context, token, debugErrors) {
+async function computeMetrics(context, token) {
   const metrics = {};
 
   // 1. Endpoints protegidos — Intune managed devices
@@ -93,7 +93,6 @@ async function computeMetrics(context, token, debugErrors) {
     };
   } catch (err) {
     context.log.warn("endpoints_protected failed:", err.message);
-    if (debugErrors) debugErrors.endpoints_protected = err.message;
   }
 
   // 2. Cumplimiento de políticas — Intune compliance state summary
@@ -114,7 +113,6 @@ async function computeMetrics(context, token, debugErrors) {
     }
   } catch (err) {
     context.log.warn("compliance_rate failed:", err.message);
-    if (debugErrors) debugErrors.compliance_rate = err.message;
   }
 
   // 3. Cuentas con MFA activo — Entra ID authentication methods report
@@ -133,7 +131,6 @@ async function computeMetrics(context, token, debugErrors) {
     }
   } catch (err) {
     context.log.warn("mfa_coverage failed:", err.message);
-    if (debugErrors) debugErrors.mfa_coverage = err.message;
   }
 
   // 4. Amenazas bloqueadas (30 días) — Defender alerts via Graph Security API
@@ -149,7 +146,6 @@ async function computeMetrics(context, token, debugErrors) {
     };
   } catch (err) {
     context.log.warn("threats_blocked_30d failed:", err.message);
-    if (debugErrors) debugErrors.threats_blocked_30d = err.message;
   }
 
   return metrics;
@@ -158,30 +154,22 @@ async function computeMetrics(context, token, debugErrors) {
 module.exports = async function (context, req) {
   const ttlMs = (parseInt(process.env.CACHE_TTL_SECONDS, 10) || 1800) * 1000;
   const now = Date.now();
-  // TEMPORARY debug aid: ?debug=1 bypasses the cache and includes the raw
-  // per-metric error messages in the response, so failures can be diagnosed
-  // without needing Application Insights. Remove this once everything is
-  // green — it's harmless (no secrets, no per-client data) but noisy.
-  const debug = req.query && req.query.debug === "1";
 
-  if (!debug && cache.data && cache.expiresAt > now) {
+  if (cache.data && cache.expiresAt > now) {
     context.res = { status: 200, headers: { "Content-Type": "application/json" }, body: cache.data };
     return;
   }
 
-  const debugErrors = debug ? {} : null;
-
   try {
     const token = await getToken(context);
-    const metrics = await computeMetrics(context, token, debugErrors);
+    const metrics = await computeMetrics(context, token);
 
-    if (Object.keys(metrics).length === 0 && !debug) {
+    if (Object.keys(metrics).length === 0) {
       throw new Error("No metric succeeded — check app permissions/consent");
     }
 
     const payload = { updated_at: new Date().toISOString(), metrics };
-    if (debug) payload._debug_errors = debugErrors;
-    if (!debug) cache = { data: payload, expiresAt: now + ttlMs };
+    cache = { data: payload, expiresAt: now + ttlMs };
 
     context.res = { status: 200, headers: { "Content-Type": "application/json" }, body: payload };
   } catch (err) {
