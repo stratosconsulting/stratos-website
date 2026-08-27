@@ -1,0 +1,13 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "",
+    "FUNCTIONS_WORKER_RUNTIME": "node",
+
+    "GRAPH_TENANT_ID": "c92714b2-6c16-4cd7-a6d0-984d5dd17fa8",
+    "GRAPH_CLIENT_ID": "f998ba84-ecc3-4688-98b7-c2daf8b9c1c7",
+    "GRAPH_CLIENT_SECRET": "pega-aqui-el-secreto-solo-en-local-nunca-en-git",
+
+    "CACHE_TTL_SECONDS": "1800"
+  }
+}

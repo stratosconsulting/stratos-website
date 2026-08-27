@@ -1,0 +1,13 @@
+{
+  "name": "stratos-security-panel-api",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Azure Functions API that feeds the live security panel on stratosconsultingpr.com (GET /api/security-stats).",
+  "main": "security-stats/index.js",
+  "scripts": {
+    "start": "func start"
+  },
+  "dependencies": {
+    "@azure/identity": "^4.4.1"
+  }
+}
