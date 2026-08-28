@@ -99,54 +99,54 @@ function round1(n) {
 async function computeTenantRaw(context, token, label) {
   const raw = {};
 
-  // Counts every device Microsoft 365/Entra ID knows about for this tenant
-  // (registered, joined, hybrid joined) — NOT just Intune-enrolled devices.
-  // Several client tenants don't have Intune deployed yet, and this metric
-  // is meant to reflect everything under management, not one product.
-  try {
-    const devices = await graphGetAll(
-      `${GRAPH}/devices?$filter=accountEnabled eq true&$select=id`,
+  // The 4 metric reads for one tenant are independent — run them
+  // concurrently instead of one-by-one. With up to 9 tenants each doing
+  // several Graph calls, sequential adds up to real page-load latency.
+  const [endpointsResult, complianceResult, mfaResult, threatsResult] = await Promise.allSettled([
+    // Counts every device Microsoft 365/Entra ID knows about for this
+    // tenant (registered, joined, hybrid joined) — NOT just Intune-enrolled
+    // devices. Several client tenants don't have Intune deployed yet, and
+    // this metric is meant to reflect everything under management, not one
+    // product.
+    graphGetAll(`${GRAPH}/devices?$filter=accountEnabled eq true&$select=id`, token),
+    graphGetOne(`${GRAPH}/deviceManagement/deviceCompliancePolicyDeviceStateSummary`, token),
+    graphGetAll(`${GRAPH}/reports/authenticationMethods/userRegistrationDetails?$select=isMfaRegistered`, token),
+    graphGetAll(
+      `${GRAPH}/security/alerts_v2?$filter=createdDateTime ge ${new Date(
+        Date.now() - 30 * 24 * 60 * 60 * 1000
+      ).toISOString()}&$select=id`,
       token
-    );
-    raw.endpoints = devices.length;
-  } catch (err) {
-    context.log.warn(`[${label}] endpoints failed:`, err.message);
+    ),
+  ]);
+
+  if (endpointsResult.status === "fulfilled") {
+    raw.endpoints = endpointsResult.value.length;
+  } else {
+    context.log.warn(`[${label}] endpoints failed:`, endpointsResult.reason?.message);
   }
 
-  try {
-    const summary = await graphGetOne(`${GRAPH}/deviceManagement/deviceCompliancePolicyDeviceStateSummary`, token);
-    const compliant = summary.compliantDeviceCount || 0;
-    const nonCompliant = summary.nonCompliantDeviceCount || 0;
+  if (complianceResult.status === "fulfilled") {
+    const compliant = complianceResult.value.compliantDeviceCount || 0;
+    const nonCompliant = complianceResult.value.nonCompliantDeviceCount || 0;
     if (compliant + nonCompliant > 0) {
       raw.compliantDevices = compliant;
       raw.knownDevices = compliant + nonCompliant;
     }
-  } catch (err) {
-    context.log.warn(`[${label}] compliance failed:`, err.message);
+  } else {
+    context.log.warn(`[${label}] compliance failed:`, complianceResult.reason?.message);
   }
 
-  try {
-    const regs = await graphGetAll(
-      `${GRAPH}/reports/authenticationMethods/userRegistrationDetails?$select=isMfaRegistered`,
-      token
-    );
-    if (regs.length > 0) {
-      raw.mfaUsers = regs.filter((u) => u.isMfaRegistered).length;
-      raw.totalUsers = regs.length;
-    }
-  } catch (err) {
-    context.log.warn(`[${label}] mfa failed:`, err.message);
+  if (mfaResult.status === "fulfilled" && mfaResult.value.length > 0) {
+    raw.mfaUsers = mfaResult.value.filter((u) => u.isMfaRegistered).length;
+    raw.totalUsers = mfaResult.value.length;
+  } else if (mfaResult.status === "rejected") {
+    context.log.warn(`[${label}] mfa failed:`, mfaResult.reason?.message);
   }
 
-  try {
-    const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
-    const alerts = await graphGetAll(
-      `${GRAPH}/security/alerts_v2?$filter=createdDateTime ge ${since}&$select=id`,
-      token
-    );
-    raw.threats30d = alerts.length;
-  } catch (err) {
-    context.log.warn(`[${label}] threats failed:`, err.message);
+  if (threatsResult.status === "fulfilled") {
+    raw.threats30d = threatsResult.value.length;
+  } else {
+    context.log.warn(`[${label}] threats failed:`, threatsResult.reason?.message);
   }
 
   return raw;
@@ -188,18 +188,15 @@ function aggregate(perTenant) {
   return metrics;
 }
 
-async function computeMetrics(context, debugTenants) {
+async function computeMetrics(context) {
   const perTenant = [];
 
   // Own tenant — application-only, exactly as in v1.
   try {
     const ownToken = (await getOwnTenantCredential().getToken(SCOPE)).token;
-    const raw = await computeTenantRaw(context, ownToken, "stratos");
-    perTenant.push(raw);
-    if (debugTenants) debugTenants.push({ tenant: "stratos (own)", ...raw });
+    perTenant.push(await computeTenantRaw(context, ownToken, "stratos"));
   } catch (err) {
     context.log.error("own tenant failed entirely:", err.message);
-    if (debugTenants) debugTenants.push({ tenant: "stratos (own)", error: String(err.message).slice(0, 200) });
   }
 
   // Client tenants — delegated OBO token, one exchange per tenant.
@@ -207,14 +204,11 @@ async function computeMetrics(context, debugTenants) {
   for (const tenantId of clientTenantIds) {
     try {
       const token = await getGraphTokenForTenant(context, tenantId);
-      const raw = await computeTenantRaw(context, token, tenantId);
-      perTenant.push(raw);
-      if (debugTenants) debugTenants.push({ tenant: tenantId, ...raw });
+      perTenant.push(await computeTenantRaw(context, token, tenantId));
     } catch (err) {
       // One client without consent/valid GDAP role shouldn't take down the
       // rest of the panel — skip it and keep going.
       context.log.warn(`client tenant ${tenantId} skipped:`, err.message);
-      if (debugTenants) debugTenants.push({ tenant: tenantId, error: String(err.message).slice(0, 200) });
     }
   }
 
@@ -224,16 +218,14 @@ async function computeMetrics(context, debugTenants) {
 module.exports = async function (context, req) {
   const ttlMs = (parseInt(process.env.CACHE_TTL_SECONDS, 10) || 1800) * 1000;
   const now = Date.now();
-  const debug = req && req.query && req.query.debug === "1";
 
-  if (!debug && cache.data && cache.expiresAt > now) {
+  if (cache.data && cache.expiresAt > now) {
     context.res = { status: 200, headers: { "Content-Type": "application/json" }, body: cache.data };
     return;
   }
 
   try {
-    const debugTenants = debug ? [] : null;
-    const { metrics, tenantsRead } = await computeMetrics(context, debugTenants);
+    const { metrics, tenantsRead } = await computeMetrics(context);
 
     if (Object.keys(metrics).length === 0) {
       throw new Error("No metric succeeded for any tenant — check app permissions/consent");
@@ -243,8 +235,7 @@ module.exports = async function (context, req) {
     // expose, and useful for confirming client aggregation is happening
     // without needing working Application Insights.
     const payload = { updated_at: new Date().toISOString(), metrics, tenants_read: tenantsRead };
-    if (debug) payload._debug_tenants = debugTenants;
-    if (!debug) cache = { data: payload, expiresAt: now + ttlMs };
+    cache = { data: payload, expiresAt: now + ttlMs };
     context.log(`security-stats: aggregated ${tenantsRead} tenant(s)`);
 
     context.res = { status: 200, headers: { "Content-Type": "application/json" }, body: payload };
