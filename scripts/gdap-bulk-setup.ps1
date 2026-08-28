@@ -235,8 +235,25 @@ foreach ($rel in $relationships) {
         $ready += $customerName
         $readyTenantIds[$customerName] = $rel.Customer.TenantId
     } catch {
-        Write-Host "  ✗ $customerName — error al crear la asignación: $($_.Exception.Message)" -ForegroundColor Red
-        $needsNewRequest += $customerName
+        # 409 Conflict aquí casi siempre significa que SÍ existe una
+        # asignación (probablemente la que acabamos de recrear en una
+        # corrida anterior) pero el Get-...AccessAssignment de arriba no la
+        # vio todavía — la API de GDAP tiene un pequeño retraso de
+        # replicación después de un delete+create. No es un cliente que
+        # necesite una relación nueva; solo no pudimos confirmar en esta
+        # corrida que tenga el set de roles completo. Se reporta aparte y
+        # se cuenta como listo — corre el script una vez más para que se
+        # confirme como "ya tenía todos los roles" en la próxima pasada.
+        $status = $null
+        try { $status = $_.Exception.Response.StatusCode.value__ } catch {}
+        if ($status -eq 409 -or $_.Exception.Message -match 'already exists') {
+            Write-Host "  ~ $customerName — ya existía una asignación (la API tardó en reflejarla) — se cuenta como lista, confírmalo en la próxima corrida." -ForegroundColor Yellow
+            $alreadyAssigned += $customerName
+            $readyTenantIds[$customerName] = $rel.Customer.TenantId
+        } else {
+            Write-Host "  ✗ $customerName — error al crear la asignación: $($_.Exception.Message)" -ForegroundColor Red
+            $needsNewRequest += $customerName
+        }
     }
 }
 
