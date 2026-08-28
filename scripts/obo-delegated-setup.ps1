@@ -165,21 +165,43 @@ $grantScope = ($GraphScopes | Where-Object { $_ -ne "offline_access" }) -join " 
 $consented = @()
 $consentFailed = @()
 
+function Grant-AppConsent {
+    param([string]$TenantId)
+
+    $body = @{
+        applicationId     = $ClientId
+        applicationGrants = @(
+            @{ enterpriseApplicationId = $graphAppId; scope = $grantScope }
+        )
+    } | ConvertTo-Json -Depth 5
+
+    Invoke-RestMethod -Method Post `
+        -Uri "https://api.partnercenter.microsoft.com/v1/customers/$TenantId/applicationconsents" `
+        -Headers @{ Authorization = "Bearer $($pcToken.access_token)"; "Content-Type" = "application/json" } `
+        -Body $body | Out-Null
+}
+
 foreach ($tenantId in $clientTenantIds) {
     try {
-        $body = @{
-            applicationId    = $ClientId
-            applicationGrants = @(
-                @{ enterpriseApplicationId = $graphAppId; scope = $grantScope }
-            )
-        } | ConvertTo-Json -Depth 5
+        try {
+            Grant-AppConsent -TenantId $tenantId
+        } catch {
+            # 409 = ya existía un consentimiento para esta app en este cliente
+            # (de una corrida anterior con menos permisos). La API de Partner
+            # Center no tiene "actualizar" — hay que borrar y volver a crear
+            # para que tome el scope nuevo completo.
+            $status = $_.Exception.Response.StatusCode.value__
+            if ($status -eq 409) {
+                Invoke-RestMethod -Method Delete `
+                    -Uri "https://api.partnercenter.microsoft.com/v1/customers/$tenantId/applicationconsents/$ClientId" `
+                    -Headers @{ Authorization = "Bearer $($pcToken.access_token)" } | Out-Null
+                Grant-AppConsent -TenantId $tenantId
+            } else {
+                throw
+            }
+        }
 
-        Invoke-RestMethod -Method Post `
-            -Uri "https://api.partnercenter.microsoft.com/v1/customers/$tenantId/applicationconsents" `
-            -Headers @{ Authorization = "Bearer $($pcToken.access_token)"; "Content-Type" = "application/json" } `
-            -Body $body | Out-Null
-
-        Write-Host "  ✓ $tenantId — consentimiento otorgado." -ForegroundColor Green
+        Write-Host "  ✓ $tenantId — consentimiento otorgado (con Device.Read.All incluido)." -ForegroundColor Green
         $consented += $tenantId
     } catch {
         Write-Host "  ✗ $tenantId — error: $($_.Exception.Message)" -ForegroundColor Red
