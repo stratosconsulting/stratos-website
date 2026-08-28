@@ -187,13 +187,24 @@ foreach ($rel in $relationships) {
 
         # La asignación existente le falta al menos un rol nuevo (ej. venía
         # de una corrida anterior que solo pedía Cloud/App Admin). GDAP no
-        # tiene "actualizar" un accessAssignment — hay que borrar y volver a
-        # crear con el set completo, igual que el fix de Partner Center en
-        # obo-delegated-setup.ps1.
+        # tiene "actualizar" un accessAssignment de forma confiable desde
+        # PowerShell (el cmdlet Update-* no expone el header If-Match que
+        # Graph exige — bug conocido del SDK), así que borramos y volvemos a
+        # crear con el set completo. El DELETE sí requiere If-Match con el
+        # ETag actual del objeto (HTTP 428 preconditionRequired si falta) —
+        # lo sacamos de AdditionalProperties['@odata.etag']; si por algún
+        # motivo no viene, usamos "*" (comodín "sin importar la versión").
+        $etag = $null
+        if ($already.AdditionalProperties -and $already.AdditionalProperties.ContainsKey('@odata.etag')) {
+            $etag = $already.AdditionalProperties['@odata.etag']
+        }
+        if (-not $etag) { $etag = '*' }
+
         try {
             Remove-MgTenantRelationshipDelegatedAdminRelationshipAccessAssignment `
                 -DelegatedAdminRelationshipId $rel.Id `
-                -DelegatedAdminAccessAssignmentId $already.Id | Out-Null
+                -DelegatedAdminAccessAssignmentId $already.Id `
+                -IfMatch $etag | Out-Null
         } catch {
             Write-Host "  ✗ $customerName — la asignación existente tenía roles incompletos pero no se pudo borrar para recrearla: $($_.Exception.Message)" -ForegroundColor Red
             $needsNewRequest += $customerName
