@@ -48,27 +48,28 @@
   a { color: inherit; }
   img { max-width: 100%; display: block; }
 
-  /* "A" mark watermark — a persistent small brand mark fixed to the
-     bottom-right corner, visible on every page at every scroll position
-     (previously it lived behind the hero only and got covered by page
-     content as soon as you scrolled). aria-hidden, no interaction,
-     disabled under reduced-motion. */
+  /* "A" mark watermark — a persistent brand mark fixed to the
+     bottom-right corner, visible on every page at every scroll position,
+     with a gentle floating drift as you scroll (bounded so it never
+     leaves the viewport — see the watermark script). aria-hidden, no
+     interaction, disabled under reduced-motion. */
   .a-watermark {
     position: fixed;
     top: auto;
     bottom: 3vh;
     right: 2vw;
-    width: min(11vw, 96px);
+    width: min(17vw, 160px);
     height: auto;
     opacity: 0.55;
     z-index: 5;
     pointer-events: none;
     user-select: none;
+    will-change: transform;
   }
   header.nav, .announce, main, footer { position: relative; z-index: 1; }
 
   @media (max-width: 720px) {
-    .a-watermark { width: min(16vw, 64px); bottom: 1.6vh; right: 3vw; opacity: 0.5; }
+    .a-watermark { width: min(24vw, 110px); bottom: 1.6vh; right: 3vw; opacity: 0.5; }
   }
 
   h1, h2, h3 {
@@ -877,6 +878,28 @@
 <span><a href="privacy.html">Privacy Policy</a> · <a href="terms.html">Terms of Use</a> · <a href="accessibility.html">Accessibility</a></span>
 </div>
 </footer>
+
+<script>
+  (function () {
+    var mark = document.querySelector('.a-watermark');
+    if (!mark) return;
+    var prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (prefersReduced) return;
+    var ticking = false;
+    function update() {
+      var y = window.scrollY || window.pageYOffset || 0;
+      // Bounded drift: floats gently as you scroll, but never far enough
+      // to leave the corner it's anchored in.
+      var offset = Math.max(-40, Math.min(40, y * 0.06));
+      mark.style.transform = 'translateY(' + (-offset) + 'px)';
+      ticking = false;
+    }
+    window.addEventListener('scroll', function () {
+      if (!ticking) { requestAnimationFrame(update); ticking = true; }
+    }, { passive: true });
+    update();
+  })();
+</script>
 
 <script>
   (function () {
