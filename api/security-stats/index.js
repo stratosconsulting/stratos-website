@@ -99,8 +99,15 @@ function round1(n) {
 async function computeTenantRaw(context, token, label) {
   const raw = {};
 
+  // Counts every device Microsoft 365/Entra ID knows about for this tenant
+  // (registered, joined, hybrid joined) — NOT just Intune-enrolled devices.
+  // Several client tenants don't have Intune deployed yet, and this metric
+  // is meant to reflect everything under management, not one product.
   try {
-    const devices = await graphGetAll(`${GRAPH}/deviceManagement/managedDevices?$select=id`, token);
+    const devices = await graphGetAll(
+      `${GRAPH}/devices?$filter=accountEnabled eq true&$select=id`,
+      token
+    );
     raw.endpoints = devices.length;
   } catch (err) {
     context.log.warn(`[${label}] endpoints failed:`, err.message);
@@ -150,7 +157,7 @@ function aggregate(perTenant) {
 
   const endpointsTotal = perTenant.reduce((sum, t) => sum + (t.endpoints || 0), 0);
   if (perTenant.some((t) => typeof t.endpoints === "number")) {
-    metrics.endpoints_protected = { value: endpointsTotal, note: "Dispositivos Intune" };
+    metrics.endpoints_protected = { value: endpointsTotal, note: "Microsoft 365 / Entra ID" };
   }
 
   const compliantTotal = perTenant.reduce((sum, t) => sum + (t.compliantDevices || 0), 0);

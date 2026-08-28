@@ -5,6 +5,13 @@ script asignó el rol GDAP, pero **GDAP no acepta tokens de aplicación pura
 contra un tenant de cliente** — solo tokens delegados app+usuario. Este paso
 cierra esa parte.
 
+> **Ya corriste esto una vez y funcionó (8 de 9 clientes).** Si solo vienes
+> a agregar el permiso nuevo `Device.Read.All` (para contar todos los
+> dispositivos de Microsoft 365/Entra, no solo los de Intune), ve directo a
+> la sección **"Actualización: Device.Read.All"** al final — no hace falta
+> repetir el Storage Account ni las variables de Azure, solo el permiso y
+> volver a correr el script.
+
 ## 1. Cambios de una sola vez en el App Registration (portal de Azure)
 
 Ve a tu app "Stratos Security Panel" en Entra ID -> App registrations:
@@ -13,7 +20,7 @@ Ve a tu app "Stratos Security Panel" en Entra ID -> App registrations:
 - **Authentication -> Supported account types** -> cambia a "Accounts in any
   organizational directory (multitenant)"
 - **API permissions -> Add a permission -> Microsoft Graph -> Delegated**,
-  agrega: `DeviceManagementManagedDevices.Read.All`,
+  agrega: `Device.Read.All`, `DeviceManagementManagedDevices.Read.All`,
   `DeviceManagementConfiguration.Read.All`, `AuditLog.Read.All`,
   `SecurityAlert.Read.All`, `offline_access` -> **Grant admin consent for STRATOS**
   (esto es ADICIONAL a los permisos de tipo Application que ya tienes de la
@@ -72,5 +79,28 @@ resolvemos para ese cliente específico.
 ## Cuándo volver a correrlo
 
 Solo cuando agregues un cliente GDAP nuevo a `client-tenant-ids.json`
-(después de correr `gdap-bulk-setup.ps1` de nuevo). Es seguro repetirlo —
-no duplica consentimientos ya otorgados.
+(después de correr `gdap-bulk-setup.ps1` de nuevo), o cuando agregues un
+permiso Graph nuevo (ver abajo). Es seguro repetirlo — no duplica
+consentimientos ya otorgados.
+
+## Actualización: Device.Read.All
+
+Para contar TODOS los dispositivos que Microsoft 365/Entra conoce (no solo
+los inscritos en Intune, ya que no todos tus clientes lo tienen), la función
+ahora también necesita el permiso `Device.Read.All`. Dos pasos:
+
+1. **En Entra ID -> App registrations -> "Stratos Security Panel" ->
+   API permissions**, agrega `Device.Read.All` DOS veces:
+   - **Microsoft Graph -> Delegated -> `Device.Read.All`** (para los
+     tenants de clientes, vía OBO)
+   - **Microsoft Graph -> Application -> `Device.Read.All`** (para tu
+     propio tenant, vía la app-only credential que ya tenías desde fase 1)
+   -> **Grant admin consent for STRATOS** después de agregar ambas.
+
+2. **Vuelve a correr `obo-delegated-setup.ps1`** exactamente como la
+   primera vez (mismos parámetros). El consentimiento que ya le diste a los
+   8 clientes NO incluye este permiso nuevo automáticamente — hay que
+   re-otorgarlo. Es seguro, no duplica nada, solo actualiza el alcance.
+
+No hace falta tocar el Storage Account ni las Application settings de
+nuevo — esas ya están bien.

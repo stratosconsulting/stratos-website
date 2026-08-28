@@ -34,7 +34,7 @@
        "Accounts in any organizational directory (multitenant)"
        (lo necesita para pedir tokens contra tenants de clientes).
     c) API permissions -> Add a permission -> Microsoft Graph -> Delegated:
-       DeviceManagementManagedDevices.Read.All,
+       Device.Read.All, DeviceManagementManagedDevices.Read.All,
        DeviceManagementConfiguration.Read.All, AuditLog.Read.All,
        SecurityAlert.Read.All, offline_access, User.Read
        -> "Grant admin consent for STRATOS".
@@ -68,6 +68,7 @@ param(
     # Scopes delegados que la función necesita — deben coincidir con lo que
     # se consintió en el paso (c) de arriba.
     [string[]]$GraphScopes = @(
+        "Device.Read.All",
         "DeviceManagementManagedDevices.Read.All",
         "DeviceManagementConfiguration.Read.All",
         "AuditLog.Read.All",
