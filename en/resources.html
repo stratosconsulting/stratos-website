@@ -875,10 +875,14 @@
     var ticking = false;
     function update() {
       var y = window.scrollY || window.pageYOffset || 0;
-      // Bounded drift: floats gently as you scroll, but never far enough
-      // to leave the corner it's anchored in.
-      var offset = Math.max(-40, Math.min(40, y * 0.06));
-      mark.style.transform = 'translateY(' + (-offset) + 'px)';
+      // Rocket launch: rises fast and far as you scroll down (capped only
+      // so it can't produce an absurd transform value on a very long
+      // page), fading out a bit as it "leaves the atmosphere". Scrolling
+      // back up brings it home.
+      var offset = Math.min(y * 0.45, 2200);
+      var fade = Math.max(0.15, 0.55 - y * 0.00035);
+      mark.style.transform = 'translateY(-' + offset + 'px)';
+      mark.style.opacity = fade;
       ticking = false;
     }
     window.addEventListener('scroll', function () {
