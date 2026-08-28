@@ -36,17 +36,30 @@ pwsh ./obo-delegated-setup.ps1 `
 Te va a mostrar una URL y un código de un solo uso — entras con la cuenta
 OBO (con MFA) y listo, no hay que pegar contraseñas en la terminal.
 
-## 3. Pegar dos cosas en Azure (una sola vez)
+## 3. Crear un Storage Account para guardar el refresh token (una sola vez)
 
-Al final el script imprime:
+Las "Managed Functions" de Static Web Apps no exponen storage propio, así
+que la función necesita uno para guardar el refresh token que va rotando.
+Es rápido:
 
-- Un **refresh token** larguísimo -> pégalo en la Application Setting
-  `GRAPH_OBO_REFRESH_TOKEN` (Static Web App -> Configuration -> Application
-  settings). De ahí en adelante la función lo rota sola — no hay que
-  tocarlo de nuevo salvo que quede vencido por no usarse 90+ días.
-- Recuérdate copiar el contenido de `client-tenant-ids.json` en la
-  Application Setting `GRAPH_CLIENT_TENANT_IDS` (tal cual, como una lista
-  JSON).
+- Portal de Azure -> **Create a resource -> Storage account**
+- Mismo Resource Group que tu Static Web App, nombre corto (ej.
+  `stratospanelstorage`), Standard / Locally-redundant storage (LRS) —
+  no hace falta nada más elegante para esto, la tabla es diminuta.
+- Cuando termine de crearse, entra a ese Storage Account -> **Access keys**
+  (o "Security + networking -> Access keys") -> copia el
+  **Connection string** de key1.
+
+## 4. Pegar tres cosas en Azure (una sola vez)
+
+- El **connection string** que acabas de copiar -> pégalo en la Environment
+  variable `TOKEN_STORAGE_CONNECTION_STRING`.
+- El **refresh token** larguísimo que imprime el script -> pégalo en
+  `GRAPH_OBO_REFRESH_TOKEN`. De ahí en adelante la función lo rota sola en
+  el Storage Account — no hay que tocarlo de nuevo salvo que quede vencido
+  por no usarse 90+ días.
+- El contenido de `client-tenant-ids.json` -> `GRAPH_CLIENT_TENANT_IDS`
+  (tal cual, como una lista JSON).
 
 ## Si algún tenant falla el consentimiento
 

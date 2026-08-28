@@ -2,9 +2,13 @@
 //
 // Holds the OBO (on-behalf-of) delegated refresh token used to read client
 // tenants via GDAP. Azure AD rotates the refresh token every time it's
-// exchanged, so we persist the latest one in Azure Table Storage (the same
-// storage account the Function App already uses for AzureWebJobsStorage —
-// no new resource to provision).
+// exchanged, so we persist the latest one in Azure Table Storage.
+//
+// Static Web Apps "Managed Functions" don't expose AzureWebJobsStorage to
+// app code (confirmed — it's not even listed in Environment variables), so
+// this needs its OWN storage account, referenced via TOKEN_STORAGE_CONNECTION_STRING.
+// See scripts/README-obo-consent.md for how to create it (one Azure Storage
+// Account, Standard/LRS is plenty — this table is tiny).
 //
 // Seeding: the very first value comes from the GRAPH_OBO_REFRESH_TOKEN
 // Application Setting (pasted in once, after running
@@ -22,9 +26,11 @@ let tableClientPromise = null;
 
 function getTableClient(context) {
   if (!tableClientPromise) {
-    const conn = process.env.AzureWebJobsStorage;
+    const conn = process.env.TOKEN_STORAGE_CONNECTION_STRING;
     if (!conn) {
-      throw new Error("AzureWebJobsStorage is not set — can't reach Table Storage for the OBO token.");
+      throw new Error(
+        "TOKEN_STORAGE_CONNECTION_STRING is not set — create a Storage Account and add its connection string as an Environment variable (see scripts/README-obo-consent.md)."
+      );
     }
     const client = TableClient.fromConnectionString(conn, TABLE_NAME, {
       allowInsecureConnection: true,
