@@ -48,25 +48,27 @@
   a { color: inherit; }
   img { max-width: 100%; display: block; }
 
-  /* Background "A" mark watermark — fixed behind all content, drifts
-     gently with scroll via JS (see watermark script). Purely decorative:
-     aria-hidden, no interaction, disabled under reduced-motion. */
+  /* "A" mark watermark — a persistent small brand mark fixed to the
+     bottom-right corner, visible on every page at every scroll position
+     (previously it lived behind the hero only and got covered by page
+     content as soon as you scrolled). aria-hidden, no interaction,
+     disabled under reduced-motion. */
   .a-watermark {
     position: fixed;
-    top: -6vh;
-    right: -4vw;
-    width: min(52vw, 680px);
+    top: auto;
+    bottom: 3vh;
+    right: 2vw;
+    width: min(11vw, 96px);
     height: auto;
-    opacity: 0.16;
-    z-index: 0;
+    opacity: 0.55;
+    z-index: 5;
     pointer-events: none;
     user-select: none;
-    will-change: transform;
   }
   header.nav, .announce, main, footer { position: relative; z-index: 1; }
 
   @media (max-width: 720px) {
-    .a-watermark { width: min(58vw, 300px); top: -2vh; right: -6vw; opacity: 0.14; }
+    .a-watermark { width: min(16vw, 64px); bottom: 1.6vh; right: 3vw; opacity: 0.5; }
   }
 
   h1, h2, h3 {
@@ -797,7 +799,7 @@
 <span aria-hidden="true">|</span>
 <a href="en/support.html">EN</a>
 </div>
-<a class="btn-ticket" href="#">Crear ticket</a>
+<a class="btn-ticket" href="https://tickets.stratosconsultingpr.com/" target="_blank" rel="noopener">Crear ticket</a>
 <a class="btn btn-primary" href="contacto.html" style="padding:0.6rem 1.3rem; font-size:0.85rem;">Contáctanos</a>
 </div>
 </div>
@@ -814,7 +816,7 @@
 <section>
 <div class="wrap">
 <div class="support-hero-card reveal">
-<a class="btn btn-primary" href="#">Crear un ticket de soporte</a>
+<a class="btn btn-primary" href="https://tickets.stratosconsultingpr.com/" target="_blank" rel="noopener">Crear un ticket de soporte</a>
 <p style="margin-top:1.2rem; font-size:0.88rem; color:var(--muted);">Para emergencias de ciberseguridad o situaciones que afecten el servicio, utilice el proceso de contacto de soporte establecido con STRATOS.</p>
 </div>
 </div>
@@ -843,7 +845,7 @@
 <ul>
 <li><a href="contacto.html">Solicitar una consulta</a></li>
 <li><a href="evaluacion-gratuita.html">Evaluación gratuita de ciberseguridad</a></li>
-<li><a href="#">Crear un ticket de soporte</a></li>
+<li><a href="https://tickets.stratosconsultingpr.com/" target="_blank" rel="noopener">Crear un ticket de soporte</a></li>
 </ul>
 </div>
 <div>
@@ -857,28 +859,9 @@
 </div>
 <div class="wrap footer-bottom">
 <span>© 2026 STRATOS Consulting Group, LLC. Todos los derechos reservados.</span>
-<span><a href="#">Política de Privacidad</a> · <a href="#">Términos de Uso</a> · <a href="#">Accesibilidad</a></span>
+<span><a href="privacidad.html">Política de Privacidad</a> · <a href="terminos.html">Términos de Uso</a> · <a href="accesibilidad.html">Accesibilidad</a></span>
 </div>
 </footer>
-
-<script>
-  (function () {
-    var mark = document.querySelector('.a-watermark');
-    if (!mark) return;
-    var prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (prefersReduced) return;
-    var ticking = false;
-    function update() {
-      var y = window.scrollY || window.pageYOffset || 0;
-      mark.style.transform = 'translateY(' + (y * 0.12) + 'px)';
-      ticking = false;
-    }
-    window.addEventListener('scroll', function () {
-      if (!ticking) { requestAnimationFrame(update); ticking = true; }
-    }, { passive: true });
-    update();
-  })();
-</script>
 
 <script>
   (function () {
