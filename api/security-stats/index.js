@@ -181,15 +181,18 @@ function aggregate(perTenant) {
   return metrics;
 }
 
-async function computeMetrics(context) {
+async function computeMetrics(context, debugTenants) {
   const perTenant = [];
 
   // Own tenant — application-only, exactly as in v1.
   try {
     const ownToken = (await getOwnTenantCredential().getToken(SCOPE)).token;
-    perTenant.push(await computeTenantRaw(context, ownToken, "stratos"));
+    const raw = await computeTenantRaw(context, ownToken, "stratos");
+    perTenant.push(raw);
+    if (debugTenants) debugTenants.push({ tenant: "stratos (own)", ...raw });
   } catch (err) {
     context.log.error("own tenant failed entirely:", err.message);
+    if (debugTenants) debugTenants.push({ tenant: "stratos (own)", error: String(err.message).slice(0, 200) });
   }
 
   // Client tenants — delegated OBO token, one exchange per tenant.
@@ -197,11 +200,14 @@ async function computeMetrics(context) {
   for (const tenantId of clientTenantIds) {
     try {
       const token = await getGraphTokenForTenant(context, tenantId);
-      perTenant.push(await computeTenantRaw(context, token, tenantId));
+      const raw = await computeTenantRaw(context, token, tenantId);
+      perTenant.push(raw);
+      if (debugTenants) debugTenants.push({ tenant: tenantId, ...raw });
     } catch (err) {
       // One client without consent/valid GDAP role shouldn't take down the
       // rest of the panel — skip it and keep going.
       context.log.warn(`client tenant ${tenantId} skipped:`, err.message);
+      if (debugTenants) debugTenants.push({ tenant: tenantId, error: String(err.message).slice(0, 200) });
     }
   }
 
@@ -211,14 +217,16 @@ async function computeMetrics(context) {
 module.exports = async function (context, req) {
   const ttlMs = (parseInt(process.env.CACHE_TTL_SECONDS, 10) || 1800) * 1000;
   const now = Date.now();
+  const debug = req && req.query && req.query.debug === "1";
 
-  if (cache.data && cache.expiresAt > now) {
+  if (!debug && cache.data && cache.expiresAt > now) {
     context.res = { status: 200, headers: { "Content-Type": "application/json" }, body: cache.data };
     return;
   }
 
   try {
-    const { metrics, tenantsRead } = await computeMetrics(context);
+    const debugTenants = debug ? [] : null;
+    const { metrics, tenantsRead } = await computeMetrics(context, debugTenants);
 
     if (Object.keys(metrics).length === 0) {
       throw new Error("No metric succeeded for any tenant — check app permissions/consent");
@@ -228,7 +236,8 @@ module.exports = async function (context, req) {
     // expose, and useful for confirming client aggregation is happening
     // without needing working Application Insights.
     const payload = { updated_at: new Date().toISOString(), metrics, tenants_read: tenantsRead };
-    cache = { data: payload, expiresAt: now + ttlMs };
+    if (debug) payload._debug_tenants = debugTenants;
+    if (!debug) cache = { data: payload, expiresAt: now + ttlMs };
     context.log(`security-stats: aggregated ${tenantsRead} tenant(s)`);
 
     context.res = { status: 200, headers: { "Content-Type": "application/json" }, body: payload };
