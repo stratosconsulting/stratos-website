@@ -18,9 +18,15 @@ const GRAPH_SCOPE = "https://graph.microsoft.com/.default offline_access";
 async function getGraphTokenForTenant(context, tenantId) {
   const refreshToken = await readRefreshToken(context);
 
+  // No client_secret here on purpose. The app has "Allow public client
+  // flows" enabled (required for the device-code login in
+  // scripts/obo-delegated-setup.ps1), and once that's on, Azure AD treats
+  // this specific flow as a public client and REJECTS a client_secret with
+  // AADSTS700025. The client-only-mode ClientSecretCredential path (own
+  // tenant, application permissions) is unaffected — that one authenticates
+  // as a confidential client separately and still needs the secret.
   const body = new URLSearchParams({
     client_id: process.env.GRAPH_CLIENT_ID,
-    client_secret: process.env.GRAPH_CLIENT_SECRET,
     grant_type: "refresh_token",
     refresh_token: refreshToken,
     scope: GRAPH_SCOPE,
