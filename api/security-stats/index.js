@@ -1,4 +1,5 @@
 // GET /api/security-stats
+// (redeploy bump: force host restart to pick up new Environment variables)
 //
 // Feeds the live security panel on the STRATOS homepage. Returns a small
 // aggregated JSON — never per-client or per-device detail (see the
