@@ -10,17 +10,23 @@
     2. Se conecta a Microsoft Graph con tu cuenta de admin del tenant de
        partner de STRATOS.
     3. Lista TODAS tus relaciones GDAP activas con clientes.
-    4. Para cada una, revisa si el rol requerido (Cloud Application
-       Administrator o Application Administrator) YA está incluido en esa
-       relación:
-         - Si SÍ está incluido -> asigna el grupo de seguridad a ese rol
-           automáticamente (no requiere que el cliente vuelva a aprobar
-           nada).
-         - Si NO está incluido -> Microsoft NO permite agregarlo a una
-           relación ya activa sin que el cliente apruebe una relación
-           nueva. El script simplemente lo reporta al final en una lista
-           clara de "clientes pendientes" — ese es el único paso que de
-           verdad requiere tocar cada cliente, y no se puede evitar.
+    4. Para cada una, revisa CUÁLES de los roles deseados (Cloud Application
+       Administrator, Application Administrator, Intune Administrator,
+       Security Reader) YA están incluidos en el catálogo de esa relación:
+         - Asigna al grupo de seguridad TODOS los que estén disponibles (no
+           solo el primero que encuentre) — así la función puede leer
+           dispositivos, cumplimiento, MFA y alertas de seguridad, no solo
+           lo mínimo para autenticar.
+         - Si la asignación ya existe pero le faltan roles nuevos respecto
+           al catálogo deseado, la borra y la vuelve a crear con el set
+           completo (la API de GDAP no tiene "actualizar" para esto, igual
+           que Partner Center — ver obo-delegated-setup.ps1).
+         - Si NINGÚN rol deseado está en el catálogo de la relación,
+           Microsoft NO permite agregarlo a una relación ya activa sin que
+           el cliente apruebe una relación nueva. El script lo reporta al
+           final en una lista clara de "clientes pendientes" — ese es el
+           único paso que de verdad requiere tocar cada cliente, y no se
+           puede evitar.
 
   Qué necesitas ANTES de correr esto (una sola vez, ver el documento técnico
   sección 11 para más detalle):
@@ -49,9 +55,19 @@ param(
 
     # Roles Entra ID built-in aceptados para leer datos vía Graph en cada
     # cliente. IDs oficiales de Microsoft (estables, no cambian por tenant).
-    [string]$CloudAppAdminRoleId = "158c047a-c907-4556-b7ef-446551a6b5f7",
-    [string]$AppAdminRoleId      = "9b895d92-2cd3-44c7-9d02-a6ac2d5ea5c3"
+    # Cloud App Admin / App Admin habilitan el login delegado en sí;
+    # Intune Administrator y Security Reader son los que de verdad hacen
+    # falta para leer cumplimiento de dispositivos y alertas de seguridad
+    # — sin ellos el panel solo puede contar dispositivos, nada más.
+    [string]$CloudAppAdminRoleId  = "158c047a-c907-4556-b7ef-446551a6b5f7",
+    [string]$AppAdminRoleId       = "9b895d92-2cd3-44c7-9d02-a6ac2d5ea5c3",
+    [string]$IntuneAdminRoleId    = "3a2c62db-5318-420d-8d74-23affee5d9d5",
+    [string]$SecurityReaderRoleId = "5d6b6bb7-de71-4623-b4af-96380a352509"
 )
+
+# Orden = prioridad de reporte, no de asignación — se le asignan al grupo
+# TODOS los que la relación tenga disponibles, no solo el primero.
+$DesiredRoleIds = @($CloudAppAdminRoleId, $AppAdminRoleId, $IntuneAdminRoleId, $SecurityReaderRoleId)
 
 $ErrorActionPreference = "Stop"
 
@@ -140,15 +156,12 @@ foreach ($rel in $relationships) {
     $customerName = $rel.Customer.DisplayName
     $includedRoleIds = $rel.AccessDetails.UnifiedRoles.RoleDefinitionId
 
-    $roleToUse = $null
-    if ($includedRoleIds -contains $CloudAppAdminRoleId) {
-        $roleToUse = $CloudAppAdminRoleId
-    } elseif ($includedRoleIds -contains $AppAdminRoleId) {
-        $roleToUse = $AppAdminRoleId
-    }
+    # Todos los roles deseados que esta relación realmente tiene en su
+    # catálogo — no solo el primero que coincida.
+    $rolesToAssign = @($DesiredRoleIds | Where-Object { $includedRoleIds -contains $_ })
 
-    if (-not $roleToUse) {
-        Write-Host "  ✗ $customerName — no tiene Cloud/Application Administrator en esta relación. Necesita una relación GDAP NUEVA." -ForegroundColor Red
+    if ($rolesToAssign.Count -eq 0) {
+        Write-Host "  ✗ $customerName — no tiene ninguno de los roles deseados en esta relación. Necesita una relación GDAP NUEVA." -ForegroundColor Red
         $needsNewRequest += $customerName
         continue
     }
@@ -159,13 +172,33 @@ foreach ($rel in $relationships) {
 
     $already = $existingAssignments | Where-Object {
         $_.AccessContainer.AccessContainerId -eq $group.Id
-    }
+    } | Select-Object -First 1
 
     if ($already) {
-        Write-Host "  = $customerName — ya tenía la asignación, no se duplica." -ForegroundColor DarkGray
-        $alreadyAssigned += $customerName
-        $readyTenantIds[$customerName] = $rel.Customer.TenantId
-        continue
+        $currentRoleIds = @($already.AccessDetails.UnifiedRoles.RoleDefinitionId)
+        $missingRoleIds = @($rolesToAssign | Where-Object { $currentRoleIds -notcontains $_ })
+
+        if ($missingRoleIds.Count -eq 0) {
+            Write-Host "  = $customerName — ya tenía todos los roles disponibles asignados, no se toca." -ForegroundColor DarkGray
+            $alreadyAssigned += $customerName
+            $readyTenantIds[$customerName] = $rel.Customer.TenantId
+            continue
+        }
+
+        # La asignación existente le falta al menos un rol nuevo (ej. venía
+        # de una corrida anterior que solo pedía Cloud/App Admin). GDAP no
+        # tiene "actualizar" un accessAssignment — hay que borrar y volver a
+        # crear con el set completo, igual que el fix de Partner Center en
+        # obo-delegated-setup.ps1.
+        try {
+            Remove-MgTenantRelationshipDelegatedAdminRelationshipAccessAssignment `
+                -DelegatedAdminRelationshipId $rel.Id `
+                -DelegatedAdminAccessAssignmentId $already.Id | Out-Null
+        } catch {
+            Write-Host "  ✗ $customerName — la asignación existente tenía roles incompletos pero no se pudo borrar para recrearla: $($_.Exception.Message)" -ForegroundColor Red
+            $needsNewRequest += $customerName
+            continue
+        }
     }
 
     $body = @{
@@ -174,7 +207,7 @@ foreach ($rel in $relationships) {
             accessContainerType = "securityGroup"
         }
         accessDetails = @{
-            unifiedRoles = @(@{ roleDefinitionId = $roleToUse })
+            unifiedRoles = @($rolesToAssign | ForEach-Object { @{ roleDefinitionId = $_ } })
         }
     }
 
@@ -182,7 +215,12 @@ foreach ($rel in $relationships) {
         New-MgTenantRelationshipDelegatedAdminRelationshipAccessAssignment `
             -DelegatedAdminRelationshipId $rel.Id `
             -BodyParameter $body | Out-Null
-        Write-Host "  ✓ $customerName — asignación creada correctamente." -ForegroundColor Green
+        $roleLabel = "$($rolesToAssign.Count) rol(es)"
+        if ($already) {
+            Write-Host "  ✓ $customerName — asignación actualizada con $roleLabel (antes tenía menos)." -ForegroundColor Green
+        } else {
+            Write-Host "  ✓ $customerName — asignación creada con $roleLabel." -ForegroundColor Green
+        }
         $ready += $customerName
         $readyTenantIds[$customerName] = $rel.Customer.TenantId
     } catch {
