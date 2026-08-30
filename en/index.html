@@ -1135,9 +1135,28 @@
         e.preventDefault();
         if (!form.checkValidity()) { form.reportValidity(); return; }
         var key = form.getAttribute('data-form');
-        form.classList.add('hidden-after-submit');
-        var confirm = document.querySelector('.form-confirm[data-confirm="' + key + '"]');
-        if (confirm) confirm.classList.add('show');
+        var submitBtn = form.querySelector('button[type="submit"]');
+        var errorEl = document.querySelector('.form-error[data-error="' + key + '"]');
+        if (errorEl) errorEl.classList.remove('show');
+        if (submitBtn) submitBtn.disabled = true;
+        var data = Object.fromEntries(new FormData(form).entries());
+        data.formType = key;
+        fetch('/api/contact-submit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        }).then(function (res) {
+          if (!res.ok) throw new Error('submit failed');
+          return res.json();
+        }).then(function (json) {
+          if (!json || !json.ok) throw new Error('submit failed');
+          form.classList.add('hidden-after-submit');
+          var confirm = document.querySelector('.form-confirm[data-confirm="' + key + '"]');
+          if (confirm) confirm.classList.add('show');
+        }).catch(function () {
+          if (submitBtn) submitBtn.disabled = false;
+          if (errorEl) errorEl.classList.add('show');
+        });
       });
     });
   })();

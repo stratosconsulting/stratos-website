@@ -757,6 +757,17 @@
   }
   .form-confirm.show { display: block; }
   .stratos-form.hidden-after-submit { display: none; }
+  .form-error {
+    display: none;
+    background: #fdf1f1;
+    border: 1px solid #e6b8b8;
+    border-radius: 14px;
+    padding: 1rem 1.2rem;
+    font-size: 0.9rem;
+    color: #8a2c2c;
+    margin-bottom: 1rem;
+  }
+  .form-error.show { display: block; }
 
   .checklist-simple { display: flex; flex-direction: column; gap: 0.8rem; }
   .checklist-simple li { display: flex; gap: 0.7rem; font-size: 0.94rem; color: var(--ink); align-items: flex-start; }
@@ -823,15 +834,15 @@
 <div>
 <form class="stratos-form" data-form="contacto">
 <div class="field-row">
-<div class="field"><label for="ct-nombre">Nombre completo</label><input id="ct-nombre" required="" type="text"/></div>
-<div class="field"><label for="ct-empresa">Empresa</label><input id="ct-empresa" required="" type="text"/></div>
+<div class="field"><label for="ct-nombre">Nombre completo</label><input id="ct-nombre" name="nombre" required="" type="text"/></div>
+<div class="field"><label for="ct-empresa">Empresa</label><input id="ct-empresa" name="empresa" required="" type="text"/></div>
 </div>
 <div class="field-row">
-<div class="field"><label for="ct-correo">Correo electrónico empresarial</label><input id="ct-correo" required="" type="email"/></div>
-<div class="field"><label for="ct-tel">Número de teléfono</label><input id="ct-tel" type="tel"/></div>
+<div class="field"><label for="ct-correo">Correo electrónico empresarial</label><input id="ct-correo" name="correo" required="" type="email"/></div>
+<div class="field"><label for="ct-tel">Número de teléfono</label><input id="ct-tel" name="telefono" type="tel"/></div>
 </div>
 <div class="field"><label for="ct-servicio">Service of Interest</label>
-<select id="ct-servicio">
+<select id="ct-servicio" name="servicio">
 <option>Cybersecurity</option>
 <option>Microsoft 365</option>
 <option>Google Workspace</option>
@@ -840,13 +851,14 @@
 <option>Technology Consulting</option>
 </select>
 </div>
-<div class="field"><label for="ct-msg">How can we help you?</label><textarea id="ct-msg" required="" rows="4"></textarea></div>
+<div class="field"><label for="ct-msg">How can we help you?</label><textarea id="ct-msg" name="mensaje" required="" rows="4"></textarea></div>
 <div class="field"><label for="ct-pref">Preferred Contact Method</label>
-<select id="ct-pref"><option>Email</option><option>Phone</option></select>
+<select id="ct-pref" name="pref"><option>Email</option><option>Phone</option></select>
 </div>
 <label class="field-check"><input required="" type="checkbox"/> I consent to being contacted by STRATOS Consulting Group.</label>
 <button class="btn btn-primary" type="submit">Request a Consultation</button>
 </form>
+<div class="form-error" data-error="contacto">There was a problem sending your request. Please try again or email us at info@stratosconsultingpr.com.</div>
 <div class="form-confirm" data-confirm="contacto">Thank you for contacting STRATOS Consulting Group. We've received your request and will get back to you as soon as possible.</div>
 </div>
 </div>
@@ -937,9 +949,28 @@
         e.preventDefault();
         if (!form.checkValidity()) { form.reportValidity(); return; }
         var key = form.getAttribute('data-form');
-        form.classList.add('hidden-after-submit');
-        var confirm = document.querySelector('.form-confirm[data-confirm="' + key + '"]');
-        if (confirm) confirm.classList.add('show');
+        var submitBtn = form.querySelector('button[type="submit"]');
+        var errorEl = document.querySelector('.form-error[data-error="' + key + '"]');
+        if (errorEl) errorEl.classList.remove('show');
+        if (submitBtn) submitBtn.disabled = true;
+        var data = Object.fromEntries(new FormData(form).entries());
+        data.formType = key;
+        fetch('/api/contact-submit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        }).then(function (res) {
+          if (!res.ok) throw new Error('submit failed');
+          return res.json();
+        }).then(function (json) {
+          if (!json || !json.ok) throw new Error('submit failed');
+          form.classList.add('hidden-after-submit');
+          var confirm = document.querySelector('.form-confirm[data-confirm="' + key + '"]');
+          if (confirm) confirm.classList.add('show');
+        }).catch(function () {
+          if (submitBtn) submitBtn.disabled = false;
+          if (errorEl) errorEl.classList.add('show');
+        });
       });
     });
   })();
