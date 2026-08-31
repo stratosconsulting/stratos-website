@@ -1216,7 +1216,7 @@
       var updatedEl = document.querySelector('[data-updated-text]');
       if (updatedEl && data.updated_at) {
         var d = new Date(data.updated_at);
-        var formatted = isNaN(d) ? data.updated_at : d.toLocaleString('es-PR', { dateStyle: 'medium', timeStyle: 'short' });
+        var formatted = isNaN(d) ? data.updated_at : d.toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' });
         updatedEl.textContent = 'Updated ' + formatted;
       }
     }
@@ -1238,7 +1238,7 @@
         var duration = 1400;
         var start = null;
         if (prefersReduced) {
-          el.textContent = (isDecimal ? target.toFixed(1) : Math.round(target).toLocaleString('es-PR')) + suffix;
+          el.textContent = (isDecimal ? target.toFixed(1) : Math.round(target).toLocaleString('en-US')) + suffix;
           return;
         }
         function step(ts) {
@@ -1246,7 +1246,7 @@
           var progress = Math.min((ts - start) / duration, 1);
           var eased = 1 - Math.pow(1 - progress, 3);
           var val = target * eased;
-          el.textContent = (isDecimal ? val.toFixed(1) : Math.round(val).toLocaleString('es-PR')) + suffix;
+          el.textContent = (isDecimal ? val.toFixed(1) : Math.round(val).toLocaleString('en-US')) + suffix;
           if (progress < 1) requestAnimationFrame(step);
         }
         requestAnimationFrame(step);
@@ -1254,17 +1254,31 @@
     }
 
     fetchLiveData().then(function (data) {
-      if (data) applyLiveData(data);
-      var el = document.querySelector('.dash-wrap');
-      if (!el) return;
-      if (prefersReduced || !('IntersectionObserver' in window)) { runCounters(); return; }
-      var io2 = new IntersectionObserver(function (entries) {
-        entries.forEach(function (entry) {
-          if (entry.isIntersecting) { runCounters(); io2.unobserve(entry.target); }
+      if (!data) return;
+      applyLiveData(data);
+      if (counted) {
+        document.querySelectorAll('.num[data-count]').forEach(function (el) {
+          var target = parseFloat(el.getAttribute('data-decimal') || el.getAttribute('data-count'));
+          var suffix = el.getAttribute('data-suffix') || '';
+          var isDecimal = el.hasAttribute('data-decimal');
+          el.textContent = (isDecimal ? target.toFixed(1) : Math.round(target).toLocaleString('en-US')) + suffix;
         });
-      }, { threshold: 0.15 });
-      io2.observe(el);
+      }
     });
+
+    var dashEl = document.querySelector('.dash-wrap');
+    if (dashEl) {
+      if (prefersReduced || !('IntersectionObserver' in window)) {
+        runCounters();
+      } else {
+        var io2 = new IntersectionObserver(function (entries) {
+          entries.forEach(function (entry) {
+            if (entry.isIntersecting) { runCounters(); io2.unobserve(entry.target); }
+          });
+        }, { threshold: 0.15 });
+        io2.observe(dashEl);
+      }
+    }
   })();
 </script>
 
