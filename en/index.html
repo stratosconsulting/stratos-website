@@ -1242,16 +1242,32 @@
         .catch(function () { return null; });
     }
 
+    // Reads the target fresh on every animation frame instead of capturing
+    // it once when the animation starts. Counters now start animating
+    // immediately on page load (see below) rather than waiting for a
+    // scroll trigger, so the live /api/security-stats fetch very often
+    // resolves WHILE the 1.4s animation is still running. With a target
+    // captured once up front, that in-flight loop kept overwriting the
+    // just-arrived real numbers with frames still easing toward the
+    // stale sample value, so the animation finished back on "248 /
+    // 1,204 / 94% / 98%" even though the correct numbers had already
+    // arrived and were sitting in data-count. Re-reading data-count (and
+    // data-suffix / data-decimal) each frame means that whenever
+    // applyLiveData() updates those attributes mid-flight, the very next
+    // frame bends toward the real number instead — no stale overwrite.
     function runCounters() {
       if (counted) return;
       counted = true;
       document.querySelectorAll('.num[data-count]').forEach(function (el) {
-        var target = parseFloat(el.getAttribute('data-decimal') || el.getAttribute('data-count'));
-        var suffix = el.getAttribute('data-suffix') || '';
-        var isDecimal = el.hasAttribute('data-decimal');
+        function currentTarget() {
+          return parseFloat(el.getAttribute('data-decimal') || el.getAttribute('data-count'));
+        }
         var duration = 1400;
         var start = null;
         if (prefersReduced) {
+          var target = currentTarget();
+          var suffix = el.getAttribute('data-suffix') || '';
+          var isDecimal = el.hasAttribute('data-decimal');
           el.textContent = (isDecimal ? target.toFixed(1) : Math.round(target).toLocaleString('en-US')) + suffix;
           return;
         }
@@ -1259,6 +1275,9 @@
           if (!start) start = ts;
           var progress = Math.min((ts - start) / duration, 1);
           var eased = 1 - Math.pow(1 - progress, 3);
+          var target = currentTarget();
+          var suffix = el.getAttribute('data-suffix') || '';
+          var isDecimal = el.hasAttribute('data-decimal');
           var val = target * eased;
           el.textContent = (isDecimal ? val.toFixed(1) : Math.round(val).toLocaleString('en-US')) + suffix;
           if (progress < 1) requestAnimationFrame(step);
