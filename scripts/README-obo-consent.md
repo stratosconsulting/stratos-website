@@ -104,3 +104,26 @@ ahora también necesita el permiso `Device.Read.All`. Dos pasos:
 
 No hace falta tocar el Storage Account ni las Application settings de
 nuevo — esas ya están bien.
+
+## Actualización: IdentityRiskEvent.Read.All (amenazas bloqueadas)
+
+Para que "Amenazas bloqueadas" cuente también los inicios de sesión
+riesgosos que detecta Entra ID Protection (no solo las alertas formales de
+Defender), la función ahora también necesita `IdentityRiskEvent.Read.All`.
+Mismos dos pasos que arriba:
+
+1. **En Entra ID -> App registrations -> "Stratos Security Panel" ->
+   API permissions**, agrega `IdentityRiskEvent.Read.All` DOS veces:
+   - **Microsoft Graph -> Delegated -> `IdentityRiskEvent.Read.All`**
+     (para los tenants de clientes, vía OBO)
+   - **Microsoft Graph -> Application -> `IdentityRiskEvent.Read.All`**
+     (para tu propio tenant)
+   -> **Grant admin consent for STRATOS** después de agregar ambas.
+
+2. **Vuelve a correr `obo-delegated-setup.ps1`** exactamente como siempre.
+
+Nota: este dato requiere que el tenant del cliente tenga Entra ID P2 (viene
+incluido en Microsoft 365 E5, o se puede comprar aparte). Los clientes que
+no lo tengan simplemente no aportan nada a esta parte del número — no falla
+nada, el panel sigue funcionando igual con solo las alertas de Defender
+para esos tenants.

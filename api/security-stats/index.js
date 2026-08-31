@@ -98,11 +98,12 @@ function round1(n) {
 // aggregator below just skips it for that tenant rather than failing.
 async function computeTenantRaw(context, token, label) {
   const raw = {};
+  const since30d = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
 
-  // The 4 metric reads for one tenant are independent — run them
-  // concurrently instead of one-by-one. With up to 9 tenants each doing
+  // The 5 metric reads for one tenant are independent — run them
+  // concurrently instead of one-by-one. With up to 13 tenants each doing
   // several Graph calls, sequential adds up to real page-load latency.
-  const [endpointsResult, complianceResult, mfaResult, threatsResult] = await Promise.allSettled([
+  const [endpointsResult, complianceResult, mfaResult, alertsResult, riskResult] = await Promise.allSettled([
     // Counts every device Microsoft 365/Entra ID knows about for this
     // tenant (registered, joined, hybrid joined) — NOT just Intune-enrolled
     // devices. Several client tenants don't have Intune deployed yet, and
@@ -111,12 +112,16 @@ async function computeTenantRaw(context, token, label) {
     graphGetAll(`${GRAPH}/devices?$filter=accountEnabled eq true&$select=id`, token),
     graphGetOne(`${GRAPH}/deviceManagement/deviceCompliancePolicyDeviceStateSummary`, token),
     graphGetAll(`${GRAPH}/reports/authenticationMethods/userRegistrationDetails?$select=isMfaRegistered`, token),
-    graphGetAll(
-      `${GRAPH}/security/alerts_v2?$filter=createdDateTime ge ${new Date(
-        Date.now() - 30 * 24 * 60 * 60 * 1000
-      ).toISOString()}&$select=id`,
-      token
-    ),
+    // Formal alerts raised by Defender / Entra ID Protection / other
+    // Microsoft security products.
+    graphGetAll(`${GRAPH}/security/alerts_v2?$filter=createdDateTime ge ${since30d}&$select=id`, token),
+    // Risky sign-ins Entra ID Protection flagged and acted on (requires
+    // Entra ID P2 on the tenant — tenants without it just come back empty,
+    // handled the same as any other missing metric below). This is a
+    // second REAL detection source, not a multiplier on the first — a
+    // risky sign-in and a Defender alert are different events, so summing
+    // them in aggregate() below is additive, not inflated.
+    graphGetAll(`${GRAPH}/identityProtection/riskDetections?$filter=activityDateTime ge ${since30d}&$select=id`, token),
   ]);
 
   if (endpointsResult.status === "fulfilled") {
@@ -143,10 +148,27 @@ async function computeTenantRaw(context, token, label) {
     context.log.warn(`[${label}] mfa failed:`, mfaResult.reason?.message);
   }
 
-  if (threatsResult.status === "fulfilled") {
-    raw.threats30d = threatsResult.value.length;
+  // threats30d combines both real sources when at least one succeeded —
+  // a tenant with only alerts_v2 access (no Entra ID P2) still contributes
+  // its alert count instead of being dropped entirely.
+  let threatsKnown = false;
+  let threats = 0;
+  if (alertsResult.status === "fulfilled") {
+    threats += alertsResult.value.length;
+    threatsKnown = true;
   } else {
-    context.log.warn(`[${label}] threats failed:`, threatsResult.reason?.message);
+    context.log.warn(`[${label}] alerts failed:`, alertsResult.reason?.message);
+  }
+  if (riskResult.status === "fulfilled") {
+    threats += riskResult.value.length;
+    threatsKnown = true;
+  } else {
+    // Expected/noisy for tenants without Entra ID P2 — logged at info
+    // level implicitly via warn, but this is not a real failure to chase.
+    context.log.warn(`[${label}] risk detections failed (often just missing Entra ID P2):`, riskResult.reason?.message);
+  }
+  if (threatsKnown) {
+    raw.threats30d = threats;
   }
 
   return raw;

@@ -73,6 +73,7 @@ param(
         "DeviceManagementConfiguration.Read.All",
         "AuditLog.Read.All",
         "SecurityAlert.Read.All",
+        "IdentityRiskEvent.Read.All",
         "offline_access"
     )
 )
