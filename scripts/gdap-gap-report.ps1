@@ -90,11 +90,62 @@ function Get-GraphAll {
     return $results
 }
 
+# Nombres conocidos de clientes, solo para que el reporte se lea sin tener
+# que cruzar cada TenantId contra Partner Center a mano. Si agregas un
+# cliente nuevo a client-tenant-ids.json y no aparece aquí, el reporte
+# simplemente muestra el TenantId tal cual — no falla nada.
+$TenantNames = @{
+    "5129a3d7-dd67-4a2f-87f5-744adece3b2b" = "FV International Bank"
+    "1ae84e9b-e89c-406d-a315-40035b7e3383" = "International Insurers Consulting Group"
+    "478cae85-3c15-49e5-8813-aa8125eb7eb7" = "Iron Shield I.I."
+    "5f5d7739-9092-4cbe-9f21-c4774b1ca205" = "Constructores Gilmar"
+    "69bf8e2c-f4dd-4cf9-b4dd-6bf1cc9f8954" = "Caribbean Investments and Acquisitions Corp (CIAC)"
+    "b35a76af-81dd-4739-832c-6d6f5bad7a42" = "Quinones Financial Group (QFG)"
+    "991502e0-11b0-4dc6-b492-d7724408be7c" = "Instituto Sono Radiologico Hostos"
+    "b7617723-c204-478c-a810-0bae25562b38" = "ABG Holdings"
+    "d3ed6bfb-968a-490b-b03f-9e858bc21da8" = "Teddy Diaz"
+    "33660702-685c-4d21-a4a0-71885bd606fc" = "Landrau Law"
+    "23a173f8-5ea4-4dba-8c74-9febf0f4faed" = "Ador Storage Development LLC"
+    "b1418c9d-dc76-4658-afd9-072e4fcde053" = "MAVI"
+    "f7e0e809-d35d-475e-adee-76fbfabd1cff" = "Aquos Air & Water"
+}
+function Get-TenantLabel {
+    param([string]$TenantId)
+    if ($TenantNames.ContainsKey($TenantId)) { return "$($TenantNames[$TenantId]) ($TenantId)" }
+    return $TenantId
+}
+
+# For a device whose compliance detail comes back as "error" (as opposed to
+# a real "noncompliant" setting violation), this pulls the device's own
+# sync/management info — the usual root cause for "error" is a stale or
+# broken agent, not an actual policy violation, and this tells you which.
+function Get-DeviceSyncInfo {
+    param([string]$Token, [string]$DeviceId)
+
+    try {
+        $d = Invoke-RestMethod `
+            -Uri "https://graph.microsoft.com/v1.0/deviceManagement/managedDevices/$($DeviceId)?`$select=lastSyncDateTime,managementAgent,azureADRegistered,complianceState,deviceEnrollmentType" `
+            -Headers @{ Authorization = "Bearer $Token" }
+        $daysSinceSync = if ($d.lastSyncDateTime) {
+            [math]::Round(((Get-Date) - [datetime]$d.lastSyncDateTime).TotalDays, 1)
+        } else { $null }
+        $staleness = if ($null -eq $daysSinceSync) { "nunca ha hecho sync" }
+                     elseif ($daysSinceSync -gt 14) { "$daysSinceSync días sin sync — probablemente offline/desinstalado" }
+                     elseif ($daysSinceSync -gt 3) { "$daysSinceSync días sin sync — revisa que el dispositivo esté prendido y conectado" }
+                     else { "sync reciente ($daysSinceSync días) pero sigue en error — esto sí amerita revisar el agente/política a mano" }
+        return "agente: $($d.managementAgent), $staleness"
+    } catch {
+        return "(no se pudo leer info de sync del dispositivo)"
+    }
+}
+
 # For a non-compliant device, this looks up WHICH assigned compliance
 # policy is failing and why (deviceCompliancePolicyStates includes a
 # human-readable displayName + the pass/fail state per assigned policy).
 # No new permission needed — DeviceManagementConfiguration.Read.All,
-# already consented, covers this.
+# already consented, covers this. When any policy is stuck in "error"
+# (agent/sync issue, not a real setting violation) it also pulls the
+# device's sync info so you know whether it's just offline.
 function Get-ComplianceFailureReason {
     param([string]$Token, [string]$DeviceId)
 
@@ -103,7 +154,11 @@ function Get-ComplianceFailureReason {
             -Url "https://graph.microsoft.com/v1.0/deviceManagement/managedDevices/$DeviceId/deviceCompliancePolicyStates"
         $failing = $states | Where-Object { $_.state -notin @('compliant', 'notApplicable') }
         if ($failing.Count -eq 0) { return "(sin detalle disponible)" }
-        return ($failing | ForEach-Object { "$($_.displayName): $($_.state)" }) -join "; "
+        $detail = ($failing | ForEach-Object { "$($_.displayName): $($_.state)" }) -join "; "
+        if ($failing | Where-Object { $_.state -eq 'error' }) {
+            $detail += " | " + (Get-DeviceSyncInfo -Token $Token -DeviceId $DeviceId)
+        }
+        return $detail
     } catch {
         return "(no se pudo leer el detalle de la política)"
     }
@@ -174,7 +229,7 @@ foreach ($tenantId in $clientTenantIds) {
                 -Url "https://graph.microsoft.com/v1.0/deviceManagement/managedDevices?`$filter=complianceState eq 'noncompliant'&`$select=id,deviceName,userPrincipalName,complianceState"
         } catch {
             $complianceKnown = $false
-            Write-Host "  ~ $tenantId — sin datos de cumplimiento (probablemente sin licencia de Intune en este tenant)" -ForegroundColor DarkGray
+            Write-Host "  ~ $(Get-TenantLabel $tenantId) — sin datos de cumplimiento (probablemente sin licencia de Intune en este tenant)" -ForegroundColor DarkGray
         }
 
         $noMfa = @()
@@ -187,10 +242,10 @@ foreach ($tenantId in $clientTenantIds) {
             # tenant. Try the per-user method instead before giving up.
             try {
                 $noMfa = Get-NoMfaUsersFallback -Token $accessToken
-                Write-Host "  ~ $tenantId — el reporte de MFA no está disponible (sin Entra ID P1/P2), usando método alterno usuario por usuario" -ForegroundColor DarkGray
+                Write-Host "  ~ $(Get-TenantLabel $tenantId) — el reporte de MFA no está disponible (sin Entra ID P1/P2), usando método alterno usuario por usuario" -ForegroundColor DarkGray
             } catch {
                 $mfaKnown = $false
-                Write-Host "  ~ $tenantId — no se pudo leer MFA por ningún método ($($_.Exception.Message))" -ForegroundColor DarkYellow
+                Write-Host "  ~ $(Get-TenantLabel $tenantId) — no se pudo leer MFA por ningún método ($($_.Exception.Message))" -ForegroundColor DarkYellow
             }
         }
 
@@ -198,7 +253,7 @@ foreach ($tenantId in $clientTenantIds) {
         if (-not $complianceKnown) { $statusNote += "cumplimiento desconocido" }
         if (-not $mfaKnown) { $statusNote += "MFA desconocido" }
         $suffix = if ($statusNote.Count -gt 0) { " ($($statusNote -join ', '))" } else { "" }
-        Write-Host "  $tenantId — $($nonCompliant.Count) dispositivo(s) no cumpliente(s), $($noMfa.Count) usuario(s) sin MFA$suffix" -ForegroundColor $(if ($nonCompliant.Count -eq 0 -and $noMfa.Count -eq 0 -and $statusNote.Count -eq 0) { "Green" } else { "Yellow" })
+        Write-Host "  $(Get-TenantLabel $tenantId) — $($nonCompliant.Count) dispositivo(s) no cumpliente(s), $($noMfa.Count) usuario(s) sin MFA$suffix" -ForegroundColor $(if ($nonCompliant.Count -eq 0 -and $noMfa.Count -eq 0 -and $statusNote.Count -eq 0) { "Green" } else { "Yellow" })
 
         foreach ($d in $nonCompliant) {
             $reason = Get-ComplianceFailureReason -Token $accessToken -DeviceId $d.id
@@ -214,7 +269,7 @@ foreach ($tenantId in $clientTenantIds) {
             }
         }
     } catch {
-        Write-Host "  ✗ $tenantId — no se pudo leer ($($_.Exception.Message))" -ForegroundColor Red
+        Write-Host "  ✗ $(Get-TenantLabel $tenantId) — no se pudo leer ($($_.Exception.Message))" -ForegroundColor Red
     }
 }
 
