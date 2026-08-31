@@ -74,6 +74,7 @@ param(
         "AuditLog.Read.All",
         "SecurityAlert.Read.All",
         "IdentityRiskEvent.Read.All",
+        "UserAuthenticationMethod.Read.All",
         "offline_access"
     )
 )

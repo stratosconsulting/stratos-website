@@ -127,3 +127,23 @@ incluido en Microsoft 365 E5, o se puede comprar aparte). Los clientes que
 no lo tengan simplemente no aportan nada a esta parte del número — no falla
 nada, el panel sigue funcionando igual con solo las alertas de Defender
 para esos tenants.
+
+## Actualización: UserAuthenticationMethod.Read.All (reporte de brechas MFA)
+
+El reporte `gdap-gap-report.ps1` usa `reports/authenticationMethods/userRegistrationDetails`
+para ver quién no tiene MFA — pero ese endpoint requiere Entra ID P1/P2 en
+el tenant del cliente, y varios de tus clientes no lo tienen (por eso salió
+403 en algunos). Este permiso nuevo habilita un método alterno (leer los
+métodos de autenticación registrados usuario por usuario, sin depender de
+ningún reporte premium) que el script usa automáticamente como respaldo
+cuando el reporte normal falla.
+
+1. **En Entra ID -> App registrations -> "Stratos Security Panel" ->
+   API permissions**, agrega `UserAuthenticationMethod.Read.All`:
+   - **Microsoft Graph -> Delegated -> `UserAuthenticationMethod.Read.All`**
+   -> **Grant admin consent for STRATOS**. (No hace falta la versión
+   Application — este dato solo se usa desde `gdap-gap-report.ps1`, que
+   corre localmente con tu login delegado, nunca desde la función pública
+   del panel.)
+
+2. **Vuelve a correr `obo-delegated-setup.ps1`** exactamente como siempre.
