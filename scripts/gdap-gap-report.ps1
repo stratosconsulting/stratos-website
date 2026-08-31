@@ -90,6 +90,25 @@ function Get-GraphAll {
     return $results
 }
 
+# For a non-compliant device, this looks up WHICH assigned compliance
+# policy is failing and why (deviceCompliancePolicyStates includes a
+# human-readable displayName + the pass/fail state per assigned policy).
+# No new permission needed — DeviceManagementConfiguration.Read.All,
+# already consented, covers this.
+function Get-ComplianceFailureReason {
+    param([string]$Token, [string]$DeviceId)
+
+    try {
+        $states = Get-GraphAll -Token $Token `
+            -Url "https://graph.microsoft.com/v1.0/deviceManagement/managedDevices/$DeviceId/deviceCompliancePolicyStates"
+        $failing = $states | Where-Object { $_.state -notin @('compliant', 'notApplicable') }
+        if ($failing.Count -eq 0) { return "(sin detalle disponible)" }
+        return ($failing | ForEach-Object { "$($_.displayName): $($_.state)" }) -join "; "
+    } catch {
+        return "(no se pudo leer el detalle de la política)"
+    }
+}
+
 # Fallback for tenants where reports/authenticationMethods/userRegistrationDetails
 # 403s (that report needs Entra ID P1/P2 on the CLIENT tenant — several of
 # ours don't have it). This reads each user's actual registered
@@ -152,7 +171,7 @@ foreach ($tenantId in $clientTenantIds) {
         $complianceKnown = $true
         try {
             $nonCompliant = Get-GraphAll -Token $accessToken `
-                -Url "https://graph.microsoft.com/v1.0/deviceManagement/managedDevices?`$filter=complianceState eq 'noncompliant'&`$select=deviceName,userPrincipalName,complianceState"
+                -Url "https://graph.microsoft.com/v1.0/deviceManagement/managedDevices?`$filter=complianceState eq 'noncompliant'&`$select=id,deviceName,userPrincipalName,complianceState"
         } catch {
             $complianceKnown = $false
             Write-Host "  ~ $tenantId — sin datos de cumplimiento (probablemente sin licencia de Intune en este tenant)" -ForegroundColor DarkGray
@@ -182,9 +201,10 @@ foreach ($tenantId in $clientTenantIds) {
         Write-Host "  $tenantId — $($nonCompliant.Count) dispositivo(s) no cumpliente(s), $($noMfa.Count) usuario(s) sin MFA$suffix" -ForegroundColor $(if ($nonCompliant.Count -eq 0 -and $noMfa.Count -eq 0 -and $statusNote.Count -eq 0) { "Green" } else { "Yellow" })
 
         foreach ($d in $nonCompliant) {
+            $reason = Get-ComplianceFailureReason -Token $accessToken -DeviceId $d.id
             $rows += [pscustomobject]@{
                 TenantId = $tenantId; Tipo = "Dispositivo no cumpliente"
-                Detalle = $d.deviceName; Usuario = $d.userPrincipalName
+                Detalle = "$($d.deviceName) — $reason"; Usuario = $d.userPrincipalName
             }
         }
         foreach ($u in $noMfa) {
