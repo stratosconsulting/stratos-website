@@ -127,15 +127,36 @@ function Get-DeviceSyncInfo {
             -Uri "https://graph.microsoft.com/v1.0/deviceManagement/managedDevices/$($DeviceId)?`$select=lastSyncDateTime,managementAgent,azureADRegistered,complianceState,deviceEnrollmentType" `
             -Headers @{ Authorization = "Bearer $Token" }
         $daysSinceSync = if ($d.lastSyncDateTime) {
-            [math]::Round(((Get-Date) - [datetime]$d.lastSyncDateTime).TotalDays, 1)
+            # lastSyncDateTime comes back UTC; compare against UTC "now" too,
+            # otherwise a local timezone offset shows up as a bogus negative
+            # "days since sync".
+            [math]::Round(((Get-Date).ToUniversalTime() - [datetime]$d.lastSyncDateTime).TotalDays, 1)
         } else { $null }
         $staleness = if ($null -eq $daysSinceSync) { "nunca ha hecho sync" }
                      elseif ($daysSinceSync -gt 14) { "$daysSinceSync días sin sync — probablemente offline/desinstalado" }
                      elseif ($daysSinceSync -gt 3) { "$daysSinceSync días sin sync — revisa que el dispositivo esté prendido y conectado" }
-                     else { "sync reciente ($daysSinceSync días) pero sigue en error — esto sí amerita revisar el agente/política a mano" }
+                     else { "sync reciente ($daysSinceSync días) — no es un problema de sync, hay que ver el detalle de la política (abajo)" }
         return "agente: $($d.managementAgent), $staleness"
     } catch {
         return "(no se pudo leer info de sync del dispositivo)"
+    }
+}
+
+# One level deeper than the policy-level state: for a policy stuck in
+# "error", this asks WHICH SETTING inside that policy is the one erroring
+# (e.g. BitLocker status, firewall status, a specific password rule) —
+# policy-level "error" alone doesn't say what's actually wrong.
+function Get-SettingFailureDetail {
+    param([string]$Token, [string]$DeviceId, [string]$PolicyStateId)
+
+    try {
+        $settings = Get-GraphAll -Token $Token `
+            -Url "https://graph.microsoft.com/v1.0/deviceManagement/managedDevices/$DeviceId/deviceCompliancePolicyStates/$PolicyStateId/settingStates"
+        $failingSettings = $settings | Where-Object { $_.state -notin @('compliant', 'notApplicable') }
+        if ($failingSettings.Count -eq 0) { return $null }
+        return ($failingSettings | ForEach-Object { "$($_.setting): $($_.state)" }) -join ", "
+    } catch {
+        return $null
     }
 }
 
@@ -154,7 +175,14 @@ function Get-ComplianceFailureReason {
             -Url "https://graph.microsoft.com/v1.0/deviceManagement/managedDevices/$DeviceId/deviceCompliancePolicyStates"
         $failing = $states | Where-Object { $_.state -notin @('compliant', 'notApplicable') }
         if ($failing.Count -eq 0) { return "(sin detalle disponible)" }
-        $detail = ($failing | ForEach-Object { "$($_.displayName): $($_.state)" }) -join "; "
+        $parts = @()
+        foreach ($p in $failing) {
+            $line = "$($p.displayName): $($p.state)"
+            $settingDetail = Get-SettingFailureDetail -Token $Token -DeviceId $DeviceId -PolicyStateId $p.id
+            if ($settingDetail) { $line += " [$settingDetail]" }
+            $parts += $line
+        }
+        $detail = $parts -join "; "
         if ($failing | Where-Object { $_.state -eq 'error' }) {
             $detail += " | " + (Get-DeviceSyncInfo -Token $Token -DeviceId $DeviceId)
         }
