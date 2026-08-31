@@ -1253,18 +1253,40 @@
       });
     }
 
+    // Don't make the visitor wait on the API before anything moves: start
+    // the counter animation (with the sample numbers already in the HTML)
+    // as soon as the panel scrolls into view, in parallel with the live
+    // fetch — not gated behind it. If real data arrives before the
+    // animation starts, it animates straight to the real numbers instead.
+    // If it arrives after (slow tenant, cold start), the numbers just snap
+    // to the real values in place — no visible flash, no multi-second
+    // stare at a static 0 while /api/security-stats is still computing.
     fetchLiveData().then(function (data) {
-      if (data) applyLiveData(data);
-      var el = document.querySelector('.dash-wrap');
-      if (!el) return;
-      if (prefersReduced || !('IntersectionObserver' in window)) { runCounters(); return; }
-      var io2 = new IntersectionObserver(function (entries) {
-        entries.forEach(function (entry) {
-          if (entry.isIntersecting) { runCounters(); io2.unobserve(entry.target); }
+      if (!data) return;
+      applyLiveData(data);
+      if (counted) {
+        document.querySelectorAll('.num[data-count]').forEach(function (el) {
+          var target = parseFloat(el.getAttribute('data-decimal') || el.getAttribute('data-count'));
+          var suffix = el.getAttribute('data-suffix') || '';
+          var isDecimal = el.hasAttribute('data-decimal');
+          el.textContent = (isDecimal ? target.toFixed(1) : Math.round(target).toLocaleString('es-PR')) + suffix;
         });
-      }, { threshold: 0.15 });
-      io2.observe(el);
+      }
     });
+
+    var dashEl = document.querySelector('.dash-wrap');
+    if (dashEl) {
+      if (prefersReduced || !('IntersectionObserver' in window)) {
+        runCounters();
+      } else {
+        var io2 = new IntersectionObserver(function (entries) {
+          entries.forEach(function (entry) {
+            if (entry.isIntersecting) { runCounters(); io2.unobserve(entry.target); }
+          });
+        }, { threshold: 0.15 });
+        io2.observe(dashEl);
+      }
+    }
   })();
 </script>
 

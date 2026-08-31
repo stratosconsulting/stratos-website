@@ -210,29 +210,44 @@ function aggregate(perTenant) {
   return metrics;
 }
 
-async function computeMetrics(context) {
-  const perTenant = [];
-
-  // Own tenant — application-only, exactly as in v1.
+// Reads one tenant end to end (token exchange + its 5 metric calls) and
+// never throws — a failure just means that tenant contributes nothing,
+// logged and swallowed here so Promise.allSettled below always resolves.
+async function readTenant(context, label, getToken) {
   try {
-    const ownToken = (await getOwnTenantCredential().getToken(SCOPE)).token;
-    perTenant.push(await computeTenantRaw(context, ownToken, "stratos"));
+    const token = await getToken();
+    return await computeTenantRaw(context, token, label);
   } catch (err) {
-    context.log.error("own tenant failed entirely:", err.message);
+    context.log.warn(`${label} skipped:`, err.message);
+    return null;
   }
+}
 
-  // Client tenants — delegated OBO token, one exchange per tenant.
+async function computeMetrics(context) {
+  // All tenants read concurrently instead of one-by-one — with up to 14
+  // tenants (own + ~13 client), each doing a token exchange plus 5 Graph
+  // calls, sequential reads used to add up to 10-30+ seconds on a cache
+  // miss (the panel refreshes every CACHE_TTL_SECONDS, default 30 min).
+  // Running them in parallel cuts that to roughly the slowest single
+  // tenant instead of the sum of all of them. Safe to parallelize: each
+  // client tenant's OBO refresh-token exchange reads the same starting
+  // token from tokenStore and writes back its own freshly rotated one —
+  // Azure AD tolerates that overlap (refresh tokens stay valid for a
+  // short grace window after rotation specifically to support concurrent
+  // use like this), so a race here just means whichever write lands last
+  // is what's persisted for the next cycle, not a broken token.
   const clientTenantIds = getClientTenantIds();
-  for (const tenantId of clientTenantIds) {
-    try {
-      const token = await getGraphTokenForTenant(context, tenantId);
-      perTenant.push(await computeTenantRaw(context, token, tenantId));
-    } catch (err) {
-      // One client without consent/valid GDAP role shouldn't take down the
-      // rest of the panel — skip it and keep going.
-      context.log.warn(`client tenant ${tenantId} skipped:`, err.message);
-    }
-  }
+  const reads = [
+    readTenant(context, "stratos", async () => (await getOwnTenantCredential().getToken(SCOPE)).token),
+    ...clientTenantIds.map((tenantId) =>
+      readTenant(context, tenantId, () => getGraphTokenForTenant(context, tenantId))
+    ),
+  ];
+
+  const results = await Promise.allSettled(reads);
+  const perTenant = results
+    .filter((r) => r.status === "fulfilled" && r.value)
+    .map((r) => r.value);
 
   return { metrics: aggregate(perTenant), tenantsRead: perTenant.length };
 }
