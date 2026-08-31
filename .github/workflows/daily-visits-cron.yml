@@ -11,11 +11,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Trigger daily-visits-report
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
-          status=$(curl -s -o /tmp/response.txt -w "%{http_code}" \
-            "https://www.stratosconsultingpr.com/api/daily-visits-report?secret=${{ secrets.CRON_SECRET }}")
+          if [ -z "$CRON_SECRET" ]; then
+            echo "::error::CRON_SECRET repo secret is empty or not set."
+            exit 1
+          fi
+          url="https://www.stratosconsultingpr.com/api/daily-visits-report?secret=${CRON_SECRET}"
+          status=$(curl -s -o /tmp/response.txt -w "%{http_code}" "$url")
           echo "Response ($status):"
           cat /tmp/response.txt
+          echo ""
           if [ "$status" -ge 300 ]; then
             echo "::error::daily-visits-report returned HTTP $status"
             exit 1
