@@ -302,6 +302,19 @@
     .hero-glow { animation: none; }
   }
 
+  .hero-network {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+    opacity: 0.6;
+    -webkit-mask-image: radial-gradient(ellipse 620px 420px at 50% 40%, transparent 25%, #000 75%);
+    mask-image: radial-gradient(ellipse 620px 420px at 50% 40%, transparent 25%, #000 75%);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .hero-network { display: none; }
+  }
+
   .hero-inner {
     position: relative;
     z-index: 2;
@@ -840,6 +853,7 @@
 <section class="hero">
 <div aria-hidden="true" class="hero-glow"></div>
 <div aria-hidden="true" class="hero-glow ring-2"></div>
+<canvas aria-hidden="true" class="hero-network"></canvas>
 <div class="wrap hero-inner">
 <p class="eyebrow">Technology Consulting for Business</p>
 <h1>Technology that drives the <span class="accent">growth of your business</span></h1>
@@ -1281,6 +1295,92 @@
         el.textContent = (isDecimal ? target.toFixed(1) : Math.round(target).toLocaleString('en-US')) + suffix;
       });
     });
+  })();
+</script>
+
+
+<script>
+  (function () {
+    var canvas = document.querySelector('.hero-network');
+    if (!canvas || !canvas.getContext) return;
+    var prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (prefersReduced) return;
+
+    var ctx = canvas.getContext('2d');
+    var hero = canvas.closest('.hero');
+    if (!hero) return;
+
+    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    var w = 0, h = 0, nodes = [];
+    var LINK_DIST = 150;
+
+    function seed(count) {
+      nodes = [];
+      for (var i = 0; i < count; i++) {
+        nodes.push({
+          x: Math.random() * w,
+          y: Math.random() * h,
+          vx: (Math.random() - 0.5) * 0.18,
+          vy: (Math.random() - 0.5) * 0.18,
+          r: 1 + Math.random() * 1.4
+        });
+      }
+    }
+
+    function resize() {
+      w = hero.offsetWidth;
+      h = hero.offsetHeight;
+      canvas.width = w * dpr;
+      canvas.height = h * dpr;
+      canvas.style.width = w + 'px';
+      canvas.style.height = h + 'px';
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      var count = w < 640 ? 24 : (w < 1100 ? 40 : 58);
+      seed(count);
+    }
+
+    var resizeTimer;
+    window.addEventListener('resize', function () {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(resize, 150);
+    }, { passive: true });
+
+    function step() {
+      ctx.clearRect(0, 0, w, h);
+      var i, j, n, a, b, dx, dy, dist;
+      for (i = 0; i < nodes.length; i++) {
+        n = nodes[i];
+        n.x += n.vx; n.y += n.vy;
+        if (n.x < 0 || n.x > w) n.vx *= -1;
+        if (n.y < 0 || n.y > h) n.vy *= -1;
+      }
+      for (i = 0; i < nodes.length; i++) {
+        for (j = i + 1; j < nodes.length; j++) {
+          a = nodes[i]; b = nodes[j];
+          dx = a.x - b.x; dy = a.y - b.y;
+          dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < LINK_DIST) {
+            ctx.strokeStyle = 'rgba(159, 211, 236, ' + (0.22 * (1 - dist / LINK_DIST)) + ')';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(a.x, a.y);
+            ctx.lineTo(b.x, b.y);
+            ctx.stroke();
+          }
+        }
+      }
+      ctx.fillStyle = 'rgba(200, 230, 245, 0.75)';
+      for (i = 0; i < nodes.length; i++) {
+        n = nodes[i];
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      requestAnimationFrame(step);
+    }
+
+    resize();
+    requestAnimationFrame(step);
   })();
 </script>
 
