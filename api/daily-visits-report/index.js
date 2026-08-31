@@ -1,6 +1,15 @@
-// Timer trigger — GET /api/daily-visits-report has no HTTP route; this runs
-// on its own schedule (see function.json: 0 0 12 * * * = 12:00 UTC = 8:00am
-// AST/Puerto Rico, every day, no DST to worry about).
+// GET /api/daily-visits-report?secret=... — NOT a timer trigger. Static
+// Web Apps "Managed Functions" only support httpTrigger (confirmed the
+// hard way: a timerTrigger version of this failed the whole deploy with
+// "Currently, only httpTriggers are supported"). Instead this is a plain
+// HTTP endpoint, called once a day by a GitHub Actions cron workflow (see
+// .github/workflows/daily-visits-cron.yml) — same effect, no separate
+// Azure Function App needed.
+//
+// Protected by a shared secret (CRON_SECRET) so a random visitor hitting
+// this URL can't spam Miguel's inbox or rack up Application Insights query
+// calls — GitHub Actions passes it as a query string param, sourced from
+// a repo secret of the same name.
 //
 // Queries Application Insights (already wired to the Static Web App) for
 // the last 24 hours of pageViews telemetry and emails Miguel a short daily
@@ -12,6 +21,8 @@
 //   MAIL_SENDER_UPN     — shared w/ contact-submit
 //   APPINSIGHTS_APP_ID  — Application Insights resource -> API Access -> Application ID
 //   APPINSIGHTS_API_KEY — same screen -> Create API Key, "Read telemetry" permission
+//   CRON_SECRET         — any random string; must match the GitHub repo secret
+//                         of the same name (see the workflow file).
 // Optional:
 //   MAIL_TO_ANALYTICS   — who gets the daily report. Falls back to MAIL_TO_CONSTANCIA
 //                         if unset, so no extra config is needed to get started.
@@ -52,12 +63,20 @@ async function runQuery(appId, apiKey, kql) {
   });
 }
 
-module.exports = async function (context, myTimer) {
+module.exports = async function (context, req) {
+  const expectedSecret = process.env.CRON_SECRET;
+  const providedSecret = (req.query && req.query.secret) || req.headers["x-cron-secret"];
+  if (!expectedSecret || providedSecret !== expectedSecret) {
+    context.res = { status: 401, body: "unauthorized" };
+    return;
+  }
+
   const appId = process.env.APPINSIGHTS_APP_ID;
   const apiKey = process.env.APPINSIGHTS_API_KEY;
 
   if (!appId || !apiKey) {
     context.log.warn("daily-visits-report: APPINSIGHTS_APP_ID/APPINSIGHTS_API_KEY not set yet — skipping (connect Application Insights to the Static Web App first).");
+    context.res = { status: 200, body: "skipped: Application Insights not configured yet" };
     return;
   }
 
@@ -65,6 +84,7 @@ module.exports = async function (context, myTimer) {
   const recipient = process.env.MAIL_TO_ANALYTICS || process.env.MAIL_TO_CONSTANCIA;
   if (!senderUpn || !recipient) {
     context.log.error("daily-visits-report: missing MAIL_SENDER_UPN or a recipient (MAIL_TO_ANALYTICS / MAIL_TO_CONSTANCIA)");
+    context.res = { status: 500, body: "missing mail configuration" };
     return;
   }
 
@@ -77,6 +97,7 @@ module.exports = async function (context, myTimer) {
     ]);
   } catch (err) {
     context.log.error("daily-visits-report: Application Insights query failed:", err.message);
+    context.res = { status: 502, body: "Application Insights query failed: " + err.message };
     return;
   }
 
@@ -127,10 +148,13 @@ module.exports = async function (context, myTimer) {
     if (!res.ok) {
       const body = await res.text().catch(() => "");
       context.log.error(`daily-visits-report: Graph sendMail -> ${res.status} ${body.slice(0, 300)}`);
+      context.res = { status: 502, body: "Graph sendMail failed: " + res.status };
       return;
     }
     context.log(`daily-visits-report: sent (${totals.Visits} visits, ${totals.Visitantes} unique)`);
+    context.res = { status: 200, body: `sent: ${totals.Visits} visits, ${totals.Visitantes} unique visitors` };
   } catch (err) {
     context.log.error("daily-visits-report: unexpected error sending mail:", err.message);
+    context.res = { status: 500, body: "unexpected error: " + err.message };
   }
 };

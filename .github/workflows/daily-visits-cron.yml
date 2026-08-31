@@ -1,0 +1,22 @@
+name: Daily visits report
+
+on:
+  schedule:
+    # 12:00 UTC = 8:00am AST (Puerto Rico, no DST to account for)
+    - cron: "0 12 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  call-report:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger daily-visits-report
+        run: |
+          status=$(curl -s -o /tmp/response.txt -w "%{http_code}" \
+            "https://www.stratosconsultingpr.com/api/daily-visits-report?secret=${{ secrets.CRON_SECRET }}")
+          echo "Response ($status):"
+          cat /tmp/response.txt
+          if [ "$status" -ge 300 ]; then
+            echo "::error::daily-visits-report returned HTTP $status"
+            exit 1
+          fi
