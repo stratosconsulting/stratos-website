@@ -174,12 +174,36 @@ async function computeTenantRaw(context, token, label) {
   return raw;
 }
 
+// Notes are stored keyed by a language-neutral noteKey, not baked in as
+// Spanish text at aggregation time — the payload is cached once (see
+// module.exports below) and served to both the ES and EN homepage, and
+// the cached response used to carry hardcoded Spanish note strings
+// ("Dispositivos Intune", "Ultimos 30 dias") that overwrote the English
+// page's static sub-labels the moment live data loaded. Notes are
+// localized at request-serve time instead, from NOTES[lang], so each
+// language gets its own cache-friendly text without doubling the
+// expensive tenant reads per language.
+const NOTES = {
+  es: {
+    endpoints_protected: "Microsoft 365 / Entra ID",
+    compliance_rate: "Dispositivos Intune",
+    mfa_coverage: "Microsoft Entra ID",
+    threats_blocked_30d: "Ultimos 30 dias",
+  },
+  en: {
+    endpoints_protected: "Microsoft 365 / Entra ID",
+    compliance_rate: "Intune Devices",
+    mfa_coverage: "Microsoft Entra ID",
+    threats_blocked_30d: "Last 30 Days",
+  },
+};
+
 function aggregate(perTenant) {
   const metrics = {};
 
   const endpointsTotal = perTenant.reduce((sum, t) => sum + (t.endpoints || 0), 0);
   if (perTenant.some((t) => typeof t.endpoints === "number")) {
-    metrics.endpoints_protected = { value: endpointsTotal, note: "Microsoft 365 / Entra ID" };
+    metrics.endpoints_protected = { value: endpointsTotal, noteKey: "endpoints_protected" };
   }
 
   const compliantTotal = perTenant.reduce((sum, t) => sum + (t.compliantDevices || 0), 0);
@@ -188,7 +212,7 @@ function aggregate(perTenant) {
     metrics.compliance_rate = {
       value: round1((compliantTotal / knownTotal) * 100),
       suffix: "%",
-      note: "Dispositivos Intune",
+      noteKey: "compliance_rate",
     };
   }
 
@@ -198,16 +222,30 @@ function aggregate(perTenant) {
     metrics.mfa_coverage = {
       value: round1((mfaTotal / usersTotal) * 100),
       suffix: "%",
-      note: "Microsoft Entra ID",
+      noteKey: "mfa_coverage",
     };
   }
 
   const threatsTotal = perTenant.reduce((sum, t) => sum + (t.threats30d || 0), 0);
   if (perTenant.some((t) => typeof t.threats30d === "number")) {
-    metrics.threats_blocked_30d = { value: threatsTotal, note: "Últimos 30 días" };
+    metrics.threats_blocked_30d = { value: threatsTotal, noteKey: "threats_blocked_30d" };
   }
 
   return metrics;
+}
+
+// Applied at serve time (both the fresh-compute path and the cache-hit
+// path) so the single cached payload can be localized differently per
+// request without re-reading every tenant per language.
+function localizeNotes(payload, lang) {
+  const notes = NOTES[lang] || NOTES.es;
+  const metrics = {};
+  Object.keys(payload.metrics).forEach((key) => {
+    const m = payload.metrics[key];
+    const { noteKey, ...rest } = m;
+    metrics[key] = noteKey && notes[noteKey] ? { ...rest, note: notes[noteKey] } : rest;
+  });
+  return { ...payload, metrics };
 }
 
 // Reads one tenant end to end (token exchange + its 5 metric calls) and
@@ -255,9 +293,10 @@ async function computeMetrics(context) {
 module.exports = async function (context, req) {
   const ttlMs = (parseInt(process.env.CACHE_TTL_SECONDS, 10) || 1800) * 1000;
   const now = Date.now();
+  const lang = req.query && req.query.lang === "en" ? "en" : "es";
 
   if (cache.data && cache.expiresAt > now) {
-    context.res = { status: 200, headers: { "Content-Type": "application/json" }, body: cache.data };
+    context.res = { status: 200, headers: { "Content-Type": "application/json" }, body: localizeNotes(cache.data, lang) };
     return;
   }
 
@@ -275,13 +314,13 @@ module.exports = async function (context, req) {
     cache = { data: payload, expiresAt: now + ttlMs };
     context.log(`security-stats: aggregated ${tenantsRead} tenant(s)`);
 
-    context.res = { status: 200, headers: { "Content-Type": "application/json" }, body: payload };
+    context.res = { status: 200, headers: { "Content-Type": "application/json" }, body: localizeNotes(payload, lang) };
   } catch (err) {
     context.log.error("security-stats failed:", err.message);
     // Fail closed but harmless: the frontend already falls back to sample
     // numbers when this endpoint doesn't return 200 (see template-v2.html).
     if (cache.data) {
-      context.res = { status: 200, headers: { "Content-Type": "application/json" }, body: cache.data };
+      context.res = { status: 200, headers: { "Content-Type": "application/json" }, body: localizeNotes(cache.data, lang) };
     } else {
       context.res = { status: 503, headers: { "Content-Type": "application/json" }, body: { error: "temporarily_unavailable" } };
     }

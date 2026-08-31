@@ -1198,7 +1198,7 @@
   (function () {
     var prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     var counted = false;
-    var STATS_ENDPOINT = '/api/security-stats';
+    var STATS_ENDPOINT = '/api/security-stats?lang=en';
 
     function applyLiveData(data) {
       if (!data || !data.metrics) return;
@@ -1253,32 +1253,34 @@
       });
     }
 
+    // The counters used to be gated behind an IntersectionObserver so they
+    // only animated once the panel scrolled into view. That was a real
+    // race: depending on viewport height / scroll position the 0.15
+    // threshold could go uncrossed (e.g. the panel landed just below the
+    // fold on load), so runCounters() never ran and the panel stayed
+    // stuck on the static "0 / 0%" placeholders — which read as wrong or
+    // missing data even though the live fetch had succeeded. Running the
+    // animation unconditionally removes that indeterminism: the panel
+    // sits right below the hero, so this is either already visible or a
+    // moment away either way, and it now behaves identically on ES and EN.
+    runCounters();
+
+    // Don't make the visitor wait on the API before anything moves: the
+    // counters above already animate with the sample numbers baked into
+    // the HTML, in parallel with this live fetch — not gated behind it.
+    // If real data arrives before the animation finishes, it eases toward
+    // the real numbers instead. If it arrives after (slow tenant, cold
+    // start), the numbers just snap to the real values in place.
     fetchLiveData().then(function (data) {
       if (!data) return;
       applyLiveData(data);
-      if (counted) {
-        document.querySelectorAll('.num[data-count]').forEach(function (el) {
-          var target = parseFloat(el.getAttribute('data-decimal') || el.getAttribute('data-count'));
-          var suffix = el.getAttribute('data-suffix') || '';
-          var isDecimal = el.hasAttribute('data-decimal');
-          el.textContent = (isDecimal ? target.toFixed(1) : Math.round(target).toLocaleString('en-US')) + suffix;
-        });
-      }
+      document.querySelectorAll('.num[data-count]').forEach(function (el) {
+        var target = parseFloat(el.getAttribute('data-decimal') || el.getAttribute('data-count'));
+        var suffix = el.getAttribute('data-suffix') || '';
+        var isDecimal = el.hasAttribute('data-decimal');
+        el.textContent = (isDecimal ? target.toFixed(1) : Math.round(target).toLocaleString('en-US')) + suffix;
+      });
     });
-
-    var dashEl = document.querySelector('.dash-wrap');
-    if (dashEl) {
-      if (prefersReduced || !('IntersectionObserver' in window)) {
-        runCounters();
-      } else {
-        var io2 = new IntersectionObserver(function (entries) {
-          entries.forEach(function (entry) {
-            if (entry.isIntersecting) { runCounters(); io2.unobserve(entry.target); }
-          });
-        }, { threshold: 0.15 });
-        io2.observe(dashEl);
-      }
-    }
   })();
 </script>
 
