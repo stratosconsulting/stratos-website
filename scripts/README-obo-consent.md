@@ -139,11 +139,15 @@ ningún reporte premium) que el script usa automáticamente como respaldo
 cuando el reporte normal falla.
 
 1. **En Entra ID -> App registrations -> "Stratos Security Panel" ->
-   API permissions**, agrega `UserAuthenticationMethod.Read.All`:
+   API permissions**, agrega DOS permisos (ambos Delegated, ninguno
+   necesita la versión Application — este dato solo se usa desde
+   `gdap-gap-report.ps1`, que corre localmente con tu login delegado,
+   nunca desde la función pública del panel):
    - **Microsoft Graph -> Delegated -> `UserAuthenticationMethod.Read.All`**
-   -> **Grant admin consent for STRATOS**. (No hace falta la versión
-   Application — este dato solo se usa desde `gdap-gap-report.ps1`, que
-   corre localmente con tu login delegado, nunca desde la función pública
-   del panel.)
+     (leer los métodos de autenticación de un usuario)
+   - **Microsoft Graph -> Delegated -> `User.Read.All`** (listar los
+     usuarios del tenant — sin esto el script no puede ni empezar a
+     recorrer la lista de usuarios)
+   -> **Grant admin consent for STRATOS** después de agregar ambos.
 
 2. **Vuelve a correr `obo-delegated-setup.ps1`** exactamente como siempre.

@@ -75,6 +75,7 @@ param(
         "SecurityAlert.Read.All",
         "IdentityRiskEvent.Read.All",
         "UserAuthenticationMethod.Read.All",
+        "User.Read.All",
         "offline_access"
     )
 )
