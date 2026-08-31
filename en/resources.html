@@ -650,6 +650,11 @@
   .page { display: none; }
   .page.active { display: block; }
 
+  .legal-content { max-width: 900px; }
+  .legal-content h3 { margin-top: 1.8rem; font-size: 1.1rem; }
+  .legal-content h3:first-child { margin-top: 0; }
+  .legal-content p { margin: 0.6rem 0; color: var(--muted); }
+
   .page-hero {
     background: linear-gradient(160deg, var(--navy-black) 0%, var(--navy-deep) 60%, var(--blue) 140%);
     padding: clamp(3rem, 8vw, 4.5rem) 0;
@@ -822,8 +827,37 @@
 <span class="resource-cat">Technology planning and budgeting</span>
 <span class="resource-cat">Newsletters and downloadable checklists</span>
 </div>
-<p class="reveal" style="margin-top:2rem; color:var(--muted);">We're preparing new resources. Contact STRATOS if you need guidance on a specific technology situation.</p>
-<a class="btn btn-primary reveal" href="contact.html" style="margin-top:1.6rem;">Ask a Technology Question</a>
+</div>
+</section>
+
+<section class="reveal">
+<div class="wrap legal-content">
+<h3>MFA: the highest-impact protection you can turn on today</h3>
+<p>Multi-factor authentication (MFA) asks for a second confirmation beyond your password — usually a code or an approval from your phone. It's the single most effective security measure against account takeover: even if someone gets your password through phishing or a data breach, they can't get in without that second factor.</p>
+<p>Microsoft has reported that MFA blocks the vast majority of unauthorized account access attempts. Even so, it's common to find organizations where only some users have it turned on — often because rollout was never finished across every account, not because anyone decided not to use it.</p>
+<p>If you're not sure what percentage of your users have MFA active, it's one of the first things we check in any security assessment.</p>
+
+<h3>5 signs of a phishing email</h3>
+<p>Phishing remains the most common way an attacker gets into an organization — not because technology fails, but because it tricks a person. These are signs worth teaching your whole team:</p>
+<p><strong>1. Unusual urgency.</strong> "Your account will be suspended in 24 hours" or "Payment overdue, act now" — time pressure is designed to keep you from thinking twice.</p>
+<p><strong>2. The sender doesn't match.</strong> The display name might say "Microsoft," but the actual email address is something else — it's always worth checking the full address, not just the name.</p>
+<p><strong>3. Links that don't go where they claim.</strong> Hovering over a link (without clicking) shows the real URL — if it doesn't match what the email describes, that's a clear sign.</p>
+<p><strong>4. Unusual requests for information.</strong> No legitimate bank or vendor will ask for your full password, an MFA code, or an urgent wire transfer by email.</p>
+<p><strong>5. Language or formatting errors that aren't typical for that organization.</strong> Not always present, but a red flag when they show up.</p>
+
+<h3>The 3-2-1 backup rule: what it means and why it's the standard</h3>
+<p>The 3-2-1 rule is a simple way to make sure a backup actually protects you when you need it: at least <strong>3 copies</strong> of your data, on <strong>2 different types of storage</strong>, with <strong>1 copy off-site</strong> (in the cloud, or at a separate physical location).</p>
+<p>The most common mistake we see isn't a missing backup — it's a backup that exists but has never been tested. A backup that can't be restored correctly isn't a backup, it's a false sense of security. We recommend testing restores periodically, not just confirming the backup "ran" without errors.</p>
+<p>In Puerto Rico, the off-site copy is also protection against extended power or weather-related outages — not just ransomware or human error.</p>
+
+<h3>How to choose an IT services provider in Puerto Rico</h3>
+<p>Some concrete questions worth asking any provider before you sign:</p>
+<p><strong>How do they prove backups actually restore?</strong> Ask them to show you evidence, not just tell you.</p>
+<p><strong>How fast do they respond to an urgent issue, and how do they measure it?</strong> A promised response time with no historical data behind it is just a promise.</p>
+<p><strong>Do they explain technical decisions in terms you understand, or just tell you what to buy?</strong> A good provider helps you understand the "why," not just execute the "what."</p>
+<p><strong>How do they handle licensing and long-term cost?</strong> Some providers make more when you buy more licenses than you need — it's worth having them explain exactly what you're paying for and why.</p>
+
+<a class="btn btn-primary reveal" style="margin-top:1rem;" href="contact.html">Ask a Technology Question</a>
 </div>
 </section>
 
