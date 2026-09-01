@@ -140,6 +140,22 @@ foreach ($p in $policies) {
         Write-Host ("  {0,-45} {1}" -f $_.Name, $_.Value)
     }
 
+    try {
+        $assignments = Get-GraphAll -Token $accessToken `
+            -Url "https://graph.microsoft.com/v1.0/deviceManagement/deviceCompliancePolicies/$($p.id)/assignments"
+        if ($assignments.Count -eq 0) {
+            Write-Host "  Asignada a: (SIN ASIGNAR -- no aplica a ningún grupo todavía)" -ForegroundColor Red
+        } else {
+            foreach ($a in $assignments) {
+                $targetType = $a.target.'@odata.type' -replace '#microsoft\.graph\.', ''
+                $groupInfo = if ($a.target.groupId) { "groupId=$($a.target.groupId)" } else { "" }
+                Write-Host "  Asignada a: $targetType $groupInfo" -ForegroundColor Cyan
+            }
+        }
+    } catch {
+        Write-Host "  (no se pudo leer assignments: $($_.Exception.Message))" -ForegroundColor Red
+    }
+
     $overview = Invoke-RestMethod `
         -Uri "https://graph.microsoft.com/v1.0/deviceManagement/deviceCompliancePolicies/$($p.id)/deviceStatusOverview" `
         -Headers @{ Authorization = "Bearer $accessToken" }
