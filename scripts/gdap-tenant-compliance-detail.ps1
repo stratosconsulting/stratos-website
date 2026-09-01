@@ -91,7 +91,7 @@ function Get-SettingFailureDetail {
         $failingSettings = $settings | Where-Object { $_.state -notin @('compliant', 'notApplicable') }
         if ($failingSettings.Count -eq 0) { return $null }
         return ($failingSettings | ForEach-Object { "$($_.setting): $($_.state)" }) -join ", "
-    } catch { return $null }
+    } catch { return "(no se pudo leer settingStates: $($_.Exception.Message))" }
 }
 
 function Get-ComplianceFailureReason {
@@ -113,7 +113,7 @@ function Get-ComplianceFailureReason {
             $detail += " | " + (Get-DeviceSyncInfo -Token $Token -DeviceId $DeviceId)
         }
         return $detail
-    } catch { return "(no se pudo leer el detalle de la política)" }
+    } catch { return "(no se pudo leer deviceCompliancePolicyStates: $($_.Exception.Message))" }
 }
 
 Write-Host "== STRATOS — Detalle de cumplimiento: $TargetTenantId ==" -ForegroundColor Cyan
@@ -150,8 +150,29 @@ foreach ($p in $policies) {
     $notOk = $deviceStatuses | Where-Object { $_.status -notin @('compliant', 'notApplicable') }
     foreach ($ds in $notOk) {
         Write-Host "`n  Dispositivo: $($ds.deviceDisplayName)  ($($ds.status))" -ForegroundColor Red
-        $reason = Get-ComplianceFailureReason -Token $accessToken -DeviceId $ds.deviceId
-        Write-Host "    $reason" -ForegroundColor Yellow
+        # deviceComplianceDeviceStatus.deviceId is the Azure AD device id,
+        # NOT the Intune managedDevice id that deviceCompliancePolicyStates
+        # needs -- look the device up by name in managedDevices to get the
+        # right id (and pull OS/edition info while we're there).
+        try {
+            $md = Get-GraphAll -Token $accessToken `
+                -Url "https://graph.microsoft.com/v1.0/deviceManagement/managedDevices?`$filter=deviceName eq '$($ds.deviceDisplayName)'&`$select=id,deviceName,operatingSystem,osVersion,model,manufacturer,complianceState"
+            if ($md.Count -eq 0) {
+                Write-Host "    (no se encontró en managedDevices por nombre)" -ForegroundColor DarkGray
+                continue
+            }
+            $managedDeviceId = $md[0].id
+            Write-Host "    OS: $($md[0].operatingSystem) $($md[0].osVersion) | Modelo: $($md[0].manufacturer) $($md[0].model)" -ForegroundColor DarkGray
+        } catch {
+            Write-Host "    (no se pudo resolver el managedDevice id: $($_.Exception.Message))" -ForegroundColor Red
+            continue
+        }
+        try {
+            $reason = Get-ComplianceFailureReason -Token $accessToken -DeviceId $managedDeviceId
+            Write-Host "    $reason" -ForegroundColor Yellow
+        } catch {
+            Write-Host "    (error leyendo el detalle: $($_.Exception.Message))" -ForegroundColor Red
+        }
     }
 }
 
