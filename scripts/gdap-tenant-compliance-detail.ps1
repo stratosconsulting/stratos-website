@@ -159,7 +159,8 @@ foreach ($p in $policies) {
                     } catch {
                         $groupName = "(error leyendo grupo: $($_.Exception.Message))"
                     }
-                    Write-Host "  Asignada a: grupo `"$groupName`" (id=$($a.target.groupId))" -ForegroundColor Cyan
+                    $mode = if ($targetType -eq 'exclusionGroupAssignmentTarget') { 'EXCLUIDO' } else { 'incluido' }
+                    Write-Host "  Asignada a: grupo `"$groupName`" [$mode] (id=$($a.target.groupId))" -ForegroundColor Cyan
                     if ($memberNames.Count -gt 0) {
                         Write-Host "    Miembros: $($memberNames -join ', ')" -ForegroundColor DarkGray
                     } else {
