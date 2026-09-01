@@ -148,8 +148,26 @@ foreach ($p in $policies) {
         } else {
             foreach ($a in $assignments) {
                 $targetType = $a.target.'@odata.type' -replace '#microsoft\.graph\.', ''
-                $groupInfo = if ($a.target.groupId) { "groupId=$($a.target.groupId)" } else { "" }
-                Write-Host "  Asignada a: $targetType $groupInfo" -ForegroundColor Cyan
+                if ($a.target.groupId) {
+                    $groupName = "(nombre no disponible)"
+                    $memberNames = @()
+                    try {
+                        $g = Invoke-RestMethod -Uri "https://graph.microsoft.com/v1.0/groups/$($a.target.groupId)?`$select=displayName" -Headers @{ Authorization = "Bearer $accessToken" }
+                        $groupName = $g.displayName
+                        $members = Get-GraphAll -Token $accessToken -Url "https://graph.microsoft.com/v1.0/groups/$($a.target.groupId)/members?`$select=displayName,deviceId"
+                        $memberNames = $members | ForEach-Object { $_.displayName }
+                    } catch {
+                        $groupName = "(error leyendo grupo: $($_.Exception.Message))"
+                    }
+                    Write-Host "  Asignada a: grupo `"$groupName`" (id=$($a.target.groupId))" -ForegroundColor Cyan
+                    if ($memberNames.Count -gt 0) {
+                        Write-Host "    Miembros: $($memberNames -join ', ')" -ForegroundColor DarkGray
+                    } else {
+                        Write-Host "    Miembros: (vacío)" -ForegroundColor DarkGray
+                    }
+                } else {
+                    Write-Host "  Asignada a: $targetType" -ForegroundColor Cyan
+                }
             }
         }
     } catch {
