@@ -386,7 +386,7 @@
   .dash-bar nav { display: flex; gap: clamp(0.8rem, 2vw, 1.6rem); flex: 1; }
   .dash-bar nav span.active { color: #fff; border-bottom: 2px solid var(--sky); padding-bottom: 2px; }
   .dash-bar nav span:not(.active) { color: rgba(255,255,255,0.6); }
-  .dash-bar .avatar { width: 26px; height: 26px; border-radius: 50%; background: var(--sky); flex: none; }
+  .dash-bar .avatar { width: 26px; height: 26px; border-radius: 50%; background: #fff; flex: none; padding: 3px; object-fit: contain; }
   .dash-bar .hide-sm { display: inline; }
   @media (max-width: 640px) { .dash-bar .hide-sm { display: none; } }
 
@@ -870,7 +870,7 @@
 <nav>
 <span class="active">Panel de seguridad</span>
 </nav>
-<span aria-hidden="true" class="avatar"></span>
+<img src="assets/favicon-512.png" alt="STRATOS" class="avatar">
 </div>
 <div class="dash-grid">
 <div class="dash-tile">
