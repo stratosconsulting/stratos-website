@@ -103,7 +103,7 @@ async function computeTenantRaw(context, token, label) {
   // The 5 metric reads for one tenant are independent — run them
   // concurrently instead of one-by-one. With up to 13 tenants each doing
   // several Graph calls, sequential adds up to real page-load latency.
-  const [endpointsResult, complianceResult, mfaResult, alertsResult, riskResult] = await Promise.allSettled([
+  const [endpointsResult, complianceResult, mfaResult, alertsResult, riskResult, licensedUsersResult] = await Promise.allSettled([
     // Counts every device Microsoft 365/Entra ID knows about for this
     // tenant (registered, joined, hybrid joined) — NOT just Intune-enrolled
     // devices. Several client tenants don't have Intune deployed yet, and
@@ -111,7 +111,7 @@ async function computeTenantRaw(context, token, label) {
     // product.
     graphGetAll(`${GRAPH}/devices?$filter=accountEnabled eq true&$select=id`, token),
     graphGetOne(`${GRAPH}/deviceManagement/deviceCompliancePolicyDeviceStateSummary`, token),
-    graphGetAll(`${GRAPH}/reports/authenticationMethods/userRegistrationDetails?$select=isMfaRegistered`, token),
+    graphGetAll(`${GRAPH}/reports/authenticationMethods/userRegistrationDetails?$select=id,isMfaRegistered`, token),
     // Formal alerts raised by Defender / Entra ID Protection / other
     // Microsoft security products.
     graphGetAll(`${GRAPH}/security/alerts_v2?$filter=createdDateTime ge ${since30d}&$select=id`, token),
@@ -122,6 +122,12 @@ async function computeTenantRaw(context, token, label) {
     // risky sign-in and a Defender alert are different events, so summing
     // them in aggregate() below is additive, not inflated.
     graphGetAll(`${GRAPH}/identityProtection/riskDetections?$filter=activityDateTime ge ${since30d}&$select=id`, token),
+    // Licensed + enabled member accounts only. Excludes unlicensed shared
+    // mailboxes (info@, no-reply@, etc.) from the MFA denominator below —
+    // those can't sign in interactively in practice and shouldn't drag
+    // down mfa_coverage just for existing. A licensed account that never
+    // registered MFA still counts against the metric, as it should.
+    graphGetAll(`${GRAPH}/users?$filter=accountEnabled eq true and userType eq 'Member'&$select=id,assignedLicenses`, token),
   ]);
 
   if (endpointsResult.status === "fulfilled") {
@@ -142,8 +148,27 @@ async function computeTenantRaw(context, token, label) {
   }
 
   if (mfaResult.status === "fulfilled" && mfaResult.value.length > 0) {
-    raw.mfaUsers = mfaResult.value.filter((u) => u.isMfaRegistered).length;
-    raw.totalUsers = mfaResult.value.length;
+    // Restrict to licensed, enabled member accounts when we could read
+    // that list — otherwise unlicensed shared mailboxes (info@, no-reply@,
+    // QFG@, etc., which QFG confirmed have no license and aren't meant for
+    // interactive sign-in) count as "no MFA" forever despite being a
+    // non-issue. Falls back to the unfiltered set if the /users read
+    // failed, rather than dropping the metric entirely.
+    let scoped = mfaResult.value;
+    if (licensedUsersResult.status === "fulfilled") {
+      const licensedIds = new Set(
+        licensedUsersResult.value
+          .filter((u) => Array.isArray(u.assignedLicenses) && u.assignedLicenses.length > 0)
+          .map((u) => u.id)
+      );
+      scoped = mfaResult.value.filter((u) => licensedIds.has(u.id));
+    } else {
+      context.log.warn(`[${label}] licensed-users read failed, using unfiltered MFA set:`, licensedUsersResult.reason?.message);
+    }
+    if (scoped.length > 0) {
+      raw.mfaUsers = scoped.filter((u) => u.isMfaRegistered).length;
+      raw.totalUsers = scoped.length;
+    }
   } else if (mfaResult.status === "rejected") {
     context.log.warn(`[${label}] mfa failed:`, mfaResult.reason?.message);
   }
